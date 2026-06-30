@@ -1,0 +1,121 @@
+name: ai-content-ops
+
+x-api-common: &api-common
+  build:
+    context: ../apps/api
+    dockerfile: Dockerfile
+  working_dir: /app
+  init: true
+  environment:
+    APP_ENV: local
+    # Keep runtime files inside the repository-level .runtime directory so local
+    # runs, containers, and cleanup scripts all converge on the same paths.
+    APP_RUNTIME_DIR: /runtime
+    TMPDIR: /runtime/tmp
+    PYTHONPYCACHEPREFIX: /runtime/python/pycache
+    DATABASE_URL: postgresql+psycopg://ai_content_ops:change-me@postgres:5432/ai_content_ops
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CELERY_RESULT_BACKEND: redis://redis:6379/1
+    MINIO_ENDPOINT: minio:9000
+    MINIO_ACCESS_KEY: minioadmin
+    MINIO_SECRET_KEY: minioadmin
+    MINIO_BUCKET: ai-content-ops
+  volumes:
+    - ../apps/api:/app
+    - ../.runtime:/runtime
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_started
+    minio:
+      condition: service_started
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: ai-content-ops-postgres
+    environment:
+      POSTGRES_DB: ai_content_ops
+      POSTGRES_USER: ai_content_ops
+      POSTGRES_PASSWORD: change-me
+    ports:
+      # Bind only to loopback for local development so the service stays usable
+      # on this machine without being exposed to the wider network by default.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    container_name: ai-content-ops-redis
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      # Redis stays on loopback in local development for the same reason as the
+      # database: convenient local access without accidental network exposure.
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - ../.runtime/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: ai-content-ops-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      # MinIO console and API are useful during local bring-up, but still kept
+      # on loopback so this compose file does not publish storage publicly.
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - ../.runtime/minio:/data
+    restart: unless-stopped
+
+  api:
+    <<: *api-common
+    container_name: ai-content-ops-api
+    command: >
+      sh -c "mkdir -p /runtime/tmp /runtime/data /runtime/python/pycache &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      # The API is the only service the browser needs directly during local use.
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  worker:
+    <<: *api-common
+    container_name: ai-content-ops-worker
+    # Keep worker concurrency conservative in the first slice so local runs are
+    # easier to read and debug while the pipeline remains deterministic.
+    command: >
+      sh -c "mkdir -p /runtime/tmp /runtime/data /runtime/python/pycache &&
+      celery -A app.tasks.celery_app:celery_app worker --loglevel=info --concurrency=1"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

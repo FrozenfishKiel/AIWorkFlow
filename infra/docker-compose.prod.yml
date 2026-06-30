@@ -1,0 +1,34 @@
+services:
+  postgres:
+    # Production relies on internal container networking, not host-published ports.
+    ports: []
+
+  redis:
+    # Production relies on internal container networking, not host-published ports.
+    ports: []
+
+  minio:
+    # Production relies on internal container networking, not host-published ports.
+    ports: []
+
+  api:
+    environment:
+      APP_ENV: production
+    command: >
+      sh -c "mkdir -p /runtime/tmp /runtime/data /runtime/python/pycache &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - ../.runtime:/runtime
+    restart: unless-stopped
+
+  worker:
+    environment:
+      APP_ENV: production
+    # Production can afford a small concurrency bump once the same pipeline is
+    # validated locally and no longer needs single-worker debugging behavior.
+    command: >
+      sh -c "mkdir -p /runtime/tmp /runtime/data /runtime/python/pycache &&
+      celery -A app.tasks.celery_app:celery_app worker --loglevel=info --concurrency=2"
+    volumes:
+      - ../.runtime:/runtime
+    restart: unless-stopped

@@ -1,0 +1,31 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$(git rev-parse --show-toplevel)/.codex/hooks/project_tooling_guard.py\"",
+            "commandWindows": "python \"%CODEROOT%\\.codex\\hooks\\project_tooling_guard.py\"",
+            "statusMessage": "Checking project command and patch policy",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$(git rev-parse --show-toplevel)/.codex/hooks/stop_verify_repo.py\"",
+            "commandWindows": "python \"%CODEROOT%\\.codex\\hooks\\stop_verify_repo.py\"",
+            "statusMessage": "Checking repository verification before stop",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

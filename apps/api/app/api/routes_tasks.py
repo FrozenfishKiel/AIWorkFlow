@@ -8,7 +8,9 @@ from sqlmodel import Session
 
 from app.core.db import get_session
 from app.core.settings import get_settings
+from app.repositories.audit_log_repository import AuditLogRepository
 from app.repositories.task_repository import TaskRepository
+from app.schemas.audit import AuditLogRead
 from app.schemas.task import TaskCreateRequest, TaskRead
 from app.services.input_security import validate_public_url
 from app.tasks.task_runner import run_task_pipeline
@@ -123,3 +125,18 @@ def get_task(task_id: UUID, session: Session = Depends(get_session)) -> TaskRead
             detail="Task not found.",
         )
     return TaskRead.model_validate(task)
+
+
+@router.get("/{task_id}/audit-logs", response_model=list[AuditLogRead])
+def list_task_audit_logs(task_id: UUID, session: Session = Depends(get_session)) -> list[AuditLogRead]:
+    """Return the latest-first action timeline for one task."""
+
+    task_repository = TaskRepository(session)
+    if task_repository.get_task(task_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found.",
+        )
+
+    audit_repository = AuditLogRepository(session)
+    return [AuditLogRead.model_validate(item) for item in audit_repository.list_for_task(task_id)]

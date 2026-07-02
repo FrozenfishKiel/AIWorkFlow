@@ -65,10 +65,32 @@ class KnowledgeRepository:
         return document
 
     def replace_chunks(self, *, document: KnowledgeDocument, contents: list[str]) -> list[KnowledgeChunk]:
+        chunk_records = [
+            {
+                "content": content,
+                "retrieval_text": content,
+                "embedding_vector": [],
+            }
+            for content in contents
+        ]
+        return self.replace_chunk_records(document=document, chunk_records=chunk_records)
+
+    def replace_chunk_records(
+        self,
+        *,
+        document: KnowledgeDocument,
+        chunk_records: list[dict[str, object]],
+    ) -> list[KnowledgeChunk]:
         self.session.exec(delete(KnowledgeChunk).where(KnowledgeChunk.document_id == document.id))
         chunks = [
-            KnowledgeChunk(document_id=document.id, chunk_index=index, content=content)
-            for index, content in enumerate(contents)
+            KnowledgeChunk(
+                document_id=document.id,
+                chunk_index=index,
+                content=str(record["content"]),
+                retrieval_text=str(record.get("retrieval_text") or record["content"]),
+                embedding_vector=[float(value) for value in list(record.get("embedding_vector") or [])],
+            )
+            for index, record in enumerate(chunk_records)
         ]
         for chunk in chunks:
             self.session.add(chunk)

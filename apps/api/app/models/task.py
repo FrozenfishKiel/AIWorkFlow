@@ -17,13 +17,9 @@ class TaskStatus(StrEnum):
     UNDERSTANDING = "understanding"
     RETRIEVING = "retrieving"
     GENERATING = "generating"
-    REVIEW_PENDING = "review_pending"
-    REVIEWING = "reviewing"
-    APPROVED = "approved"
     EXPORTING = "exporting"
     COMPLETED = "completed"
     FAILED = "failed"
-    REJECTED = "rejected"
 
 
 class Task(SQLModel, table=True):
@@ -72,7 +68,7 @@ class Task(SQLModel, table=True):
     workflow_result: dict[str, Any] | None = Field(
         default=None,
         sa_column=Column(JSON, nullable=True),
-        description="Structured workflow output shown before human review.",
+        description="Structured workflow output persisted as the latest generated task result.",
     )
     review: dict[str, Any] | None = Field(
         default=None,
@@ -82,7 +78,7 @@ class Task(SQLModel, table=True):
     approved_snapshot: dict[str, Any] | None = Field(
         default=None,
         sa_column=Column(JSON, nullable=True),
-        description="Canonical reviewed snapshot that downstream export must consume instead of mutable review fields.",
+        description="Legacy field name that now stores the canonical stable snapshot consumed by downstream export.",
     )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.models import ExportJob, ExportJobStatus
 
@@ -29,6 +29,12 @@ class ExportJobRepository:
         if job is None:
             raise LookupError(f"Export job not found: {export_job_id}")
         return job
+
+    def list_jobs(self, *, task_id: str | UUID | None = None) -> list[ExportJob]:
+        statement = select(ExportJob).order_by(ExportJob.created_at.desc())
+        if task_id is not None:
+            statement = statement.where(ExportJob.task_id == UUID(str(task_id)))
+        return list(self.session.exec(statement))
 
     def update_job(
         self,

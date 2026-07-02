@@ -33,6 +33,22 @@ class ContextBuilder:
             if len(selected_hits) >= 3:
                 break
 
+        if parsed_input["source_kind"] == "product_request":
+            sections = [
+                "product_brief",
+                "task_description",
+                "retrieval_evidence",
+                "value_point_constraints",
+            ]
+            return {
+                "sections": sections,
+                "input_summary": understanding["summary"],
+                "selected_hits": selected_hits,
+                "duplicate_hits_removed": duplicate_hits_removed,
+                "manual_checks": [],
+                "quality_flags": parsed_input["input_quality"]["quality_flags"],
+            }
+
         sections = [
             "task_goal",
             "input_summary",

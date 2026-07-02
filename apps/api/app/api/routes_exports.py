@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from sqlmodel import Session
 
 from app.core.db import get_session
+from app.repositories.audit_log_repository import AuditLogRepository
 from app.repositories.export_job_repository import ExportJobRepository
 from app.repositories.task_repository import TaskRepository
 from app.schemas.task import ExportJobCreateRequest, ExportJobRead
@@ -18,7 +19,11 @@ router = APIRouter(prefix="/exports", tags=["exports"])
 
 
 def _export_service(session: Session) -> ExportService:
-    return ExportService(TaskRepository(session), ExportJobRepository(session))
+    return ExportService(
+        TaskRepository(session),
+        ExportJobRepository(session),
+        AuditLogRepository(session),
+    )
 
 
 @router.post("", response_model=ExportJobRead, status_code=status.HTTP_201_CREATED)
@@ -26,7 +31,7 @@ def create_export_job(
     payload: ExportJobCreateRequest,
     session: Session = Depends(get_session),
 ) -> ExportJobRead:
-    """Create an export job for an approved task and enqueue async generation."""
+    """Create an export job for a task with a stable snapshot and enqueue async generation."""
 
     service = _export_service(session)
     try:
@@ -39,6 +44,15 @@ def create_export_job(
 
     repository = ExportJobRepository(session)
     return ExportJobRead.model_validate(repository.require_job(job.id))
+
+
+@router.get("", response_model=list[ExportJobRead])
+def list_export_jobs(task_id: UUID | None = None, session: Session = Depends(get_session)) -> list[ExportJobRead]:
+    """Return export jobs in latest-first order, optionally filtered by task."""
+
+    repository = ExportJobRepository(session)
+    jobs = repository.list_jobs(task_id=task_id)
+    return [ExportJobRead.model_validate(job) for job in jobs]
 
 
 @router.get("/{export_job_id}", response_model=ExportJobRead)

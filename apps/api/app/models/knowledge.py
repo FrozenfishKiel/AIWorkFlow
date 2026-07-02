@@ -4,8 +4,11 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column
+from sqlalchemy import JSON, Column
+from pgvector.sqlalchemy import Vector
 from sqlmodel import DateTime, Field, SQLModel
+
+EMBEDDING_DIMENSION = 128
 
 
 class KnowledgeDocumentStatus(StrEnum):
@@ -51,6 +54,15 @@ class KnowledgeChunk(SQLModel, table=True):
     document_id: UUID = Field(index=True, description="Owning knowledge document identifier.")
     chunk_index: int = Field(index=True, description="Stable order index of the chunk within the source document.")
     content: str = Field(description="Chunk text used for lexical retrieval and visible citations.")
+    retrieval_text: str = Field(
+        default="",
+        description="Normalized retrieval text used for semantic profile building and vector ranking.",
+    )
+    embedding_vector: list[float] = Field(
+        default_factory=list,
+        sa_column=Column(Vector(EMBEDDING_DIMENSION).with_variant(JSON(), "sqlite"), nullable=False),
+        description="Dense embedding vector stored for vector-style retrieval ranking.",
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True), nullable=False),

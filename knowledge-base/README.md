@@ -24,6 +24,14 @@
 - 经过提炼和重写的内容放 `02-curated-notes`
 - 所有方便检索的导航文档放 `03-indexes`
 
+当前仓库已经补了一组可直接演示的占位业务域资料：
+
+- `02-curated-notes/content-ops/品牌语气与外宣约束.md`
+- `02-curated-notes/content-ops/发布前审批与证据规范.md`
+- `02-curated-notes/content-ops/内容任务拆解模板.md`
+
+它们的定位不是正式业务知识库，而是第一轮联调用的 `content-ops` 占位知识域。
+
 命名约定：
 
 - 来源类：`来源-平台-主题.md`

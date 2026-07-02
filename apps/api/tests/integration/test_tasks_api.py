@@ -5,6 +5,7 @@ from sqlmodel import Session
 
 from app.models.task import TaskStatus
 from app.repositories.task_repository import TaskRepository
+from app.services.task_pipeline_service import TaskPipelineService
 
 
 def test_create_task_returns_queued_task_and_lists_it(
@@ -38,6 +39,21 @@ def test_create_task_returns_queued_task_and_lists_it(
     assert len(listed_tasks) == 1
     assert listed_tasks[0]["id"] == created_task["id"]
     assert listed_tasks[0]["status"] == TaskStatus.QUEUED
+
+
+def test_tasks_route_accepts_local_dev_cors_preflight_on_dynamic_vite_port(
+    client,
+) -> None:
+    response = client.options(
+        "/tasks",
+        headers={
+            "Origin": "http://127.0.0.1:5175",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5175"
 
 
 def test_create_task_rejects_file_input_for_json_endpoint(client) -> None:
@@ -77,9 +93,16 @@ def test_get_task_detail_returns_pipeline_payload(
 ) -> None:
     repository = TaskRepository(session)
     task = repository.create_task(input_type="url", content="https://example.com/article")
+    task.review = {
+        "decision": "approved",
+        "reviewer_note": "Legacy internal note should stay out of the public payload.",
+    }
+    session.add(task)
+    session.commit()
+    session.refresh(task)
     repository.update_pipeline_results(
         task=task,
-        status=TaskStatus.REVIEW_PENDING,
+        status=TaskStatus.COMPLETED,
         understanding={
             "summary": "The article focuses on launch messaging and review constraints.",
             "audience": ["brand", "content-ops"],
@@ -108,6 +131,8 @@ def test_get_task_detail_returns_pipeline_payload(
                 {
                     "source_id": "kb-brand-guideline",
                     "title": "Brand tone guideline",
+                    "snippet": "Keep the tone practical and avoid over-promising.",
+                    "reason": "Adds a visible tone constraint to the generated draft.",
                 }
             ],
             "uncertainties": ["Final business angle still needs human confirmation."],
@@ -128,7 +153,7 @@ def test_get_task_detail_returns_pipeline_payload(
     assert detail_response.status_code == 200
     detail = detail_response.json()
     assert detail["id"] == str(task.id)
-    assert detail["status"] == TaskStatus.REVIEW_PENDING
+    assert detail["status"] == TaskStatus.COMPLETED
     assert (
         detail["understanding"]["summary"]
         == "The article focuses on launch messaging and review constraints."
@@ -140,229 +165,57 @@ def test_get_task_detail_returns_pipeline_payload(
         == "This is a draft workflow result waiting for human review."
     )
     assert detail["workflow_result"]["evidence_used"][0]["source_id"] == "kb-brand-guideline"
+    assert detail["workflow_result"]["evidence_used"][0]["snippet"] == "Keep the tone practical and avoid over-promising."
+    assert detail["workflow_result"]["evidence_used"][0]["reason"] == "Adds a visible tone constraint to the generated draft."
     assert detail["workflow_result"]["processing_trace"]
+    assert detail["approved_snapshot"]["workflow_result"]["draft"] == "This is a draft workflow result waiting for human review."
+    assert "review" not in detail
 
 
-def test_review_start_save_and_approve_persists_reviewer_changes(
+def test_review_routes_are_not_exposed_anymore(
     client,
     session: Session,
 ) -> None:
     repository = TaskRepository(session)
-    task = repository.create_task(input_type="text", content="Review this generated launch draft.")
-    repository.update_pipeline_results(
-        task=task,
-        status=TaskStatus.REVIEW_PENDING,
-        understanding={
-            "summary": "Original summary",
-            "audience": ["brand"],
-            "key_points": ["Original point"],
-        },
-        retrieval_hits=[
-            {
-                "source_id": "kb-original",
-                "title": "Original source",
-                "snippet": "Original support",
-                "reason": "Original reason",
-            }
-        ],
-        workflow_result={
-            "draft": "Original workflow draft",
-            "review_notes": ["Original note"],
-            "open_questions": ["Original question"],
-        },
-    )
+    task = repository.create_task(input_type="text", content="Legacy review routes should stay retired.")
 
-    start_response = client.post(f"/reviews/{task.id}/start")
-
-    assert start_response.status_code == 200
-    started_task = start_response.json()
-    assert started_task["status"] == TaskStatus.REVIEWING
-
-    review_payload = {
-        "edited_understanding": {
-            "summary": "Edited summary for approval.",
-            "audience": ["brand", "ops"],
-            "key_points": ["Edited point 1", "Edited point 2"],
-            "risk_points": ["Claims still require reviewer verification before export."],
-            "uncertain_items": ["Final business angle still needs human confirmation."],
-            "input_quality": {
-                "source_kind": "text",
-                "quality_flags": [],
-                "extracted_length": 64,
-            },
-        },
-        "edited_retrieval_hits": [
-            {
-                "source_id": "kb-replaced",
-                "title": "Replacement source",
-                "snippet": "Replacement support",
-                "reason": "Reviewer replaced the citation.",
-            }
-        ],
-        "edited_workflow_result": {
-            "draft": "Edited workflow draft ready for export.",
-            "review_notes": ["Keep the promise grounded."],
-            "open_questions": ["Is legal review needed?"],
-        },
-        "not_adopted_items": ["Dropped the unsupported growth claim."],
-        "reviewer_note": "Edited source and copy before approval.",
-    }
-
-    save_response = client.put(f"/reviews/{task.id}", json=review_payload)
-
-    assert save_response.status_code == 200
-    saved_task = save_response.json()
-    assert saved_task["status"] == TaskStatus.REVIEWING
-    assert saved_task["review"]["decision"] == "in_review"
-    assert saved_task["review"]["edited_workflow_result"]["draft"] == "Edited workflow draft ready for export."
-    assert saved_task["review"]["not_adopted_items"] == ["Dropped the unsupported growth claim."]
-
-    approve_response = client.post(f"/reviews/{task.id}/approve", json=review_payload)
-
-    assert approve_response.status_code == 200
-    approved_task = approve_response.json()
-    assert approved_task["status"] == TaskStatus.APPROVED
-    assert approved_task["review"]["decision"] == "approved"
-    assert approved_task["review"]["edited_understanding"]["summary"] == "Edited summary for approval."
-    assert approved_task["review"]["edited_understanding"]["risk_points"] == [
-        "Claims still require reviewer verification before export."
+    responses = [
+        client.post(f"/reviews/{task.id}/start"),
+        client.put(f"/reviews/{task.id}", json={}),
+        client.post(f"/reviews/{task.id}/approve", json={}),
+        client.post(f"/reviews/{task.id}/reject", json={}),
+        client.post(f"/reviews/{task.id}/rerun", json={}),
     ]
-    assert approved_task["approved_snapshot"]["workflow_result"]["draft"] == "Edited workflow draft ready for export."
-    assert approved_task["approved_snapshot"]["understanding"]["summary"] == "Edited summary for approval."
 
-    detail_response = client.get(f"/tasks/{task.id}")
-
-    assert detail_response.status_code == 200
-    detail = detail_response.json()
-    assert detail["status"] == TaskStatus.APPROVED
-    assert detail["review"]["edited_retrieval_hits"][0]["source_id"] == "kb-replaced"
-    assert detail["approved_snapshot"]["retrieval_hits"][0]["source_id"] == "kb-replaced"
+    assert [response.status_code for response in responses] == [404, 404, 404, 404, 404]
 
 
-def test_review_reject_marks_task_rejected_with_reason(
+def test_task_audit_log_endpoint_returns_latest_first_timeline(
     client,
     session: Session,
 ) -> None:
     repository = TaskRepository(session)
-    task = repository.create_task(input_type="text", content="Reject this workflow result.")
-    repository.update_pipeline_results(
-        task=task,
-        status=TaskStatus.REVIEW_PENDING,
-        understanding={
-            "summary": "Needs changes",
-            "audience": ["brand"],
-            "key_points": ["Claim cannot be verified"],
-        },
-        retrieval_hits=[],
-        workflow_result={
-            "draft": "This claim is too strong.",
-            "review_notes": ["Claims need proof."],
-            "open_questions": ["Can we verify the metric?"],
-        },
+    task = repository.create_task(input_type="text", content="Need an auditable task timeline.")
+    TaskPipelineService(lambda: Session(session.get_bind())).run_pipeline(task.id)
+
+    export_response = client.post(
+        "/exports",
+        json={"task_id": str(task.id), "export_type": "markdown"},
     )
-    client.post(f"/reviews/{task.id}/start")
+    assert export_response.status_code == 201
 
-    reject_response = client.post(
-        f"/reviews/{task.id}/reject",
-        json={"rejection_reason": "The core claim is unsupported and must be regenerated."},
-    )
+    response = client.get(f"/tasks/{task.id}/audit-logs")
 
-    assert reject_response.status_code == 200
-    rejected_task = reject_response.json()
-    assert rejected_task["status"] == TaskStatus.REJECTED
-    assert rejected_task["review"]["decision"] == "rejected"
-    assert rejected_task["review"]["rejection_reason"] == "The core claim is unsupported and must be regenerated."
-
-
-def test_review_rerun_requeues_rejected_task_with_reason(
-    client,
-    session: Session,
-    monkeypatch,
-) -> None:
-    enqueue_mock = MagicMock()
-    monkeypatch.setattr("app.api.routes_reviews.run_task_pipeline.delay", enqueue_mock)
-
-    repository = TaskRepository(session)
-    task = repository.create_task(input_type="text", content="Retry this workflow result.")
-    repository.update_pipeline_results(
-        task=task,
-        status=TaskStatus.REVIEW_PENDING,
-        understanding={
-            "summary": "Needs rework",
-            "audience": ["brand"],
-            "key_points": ["Unsupported claim"],
-        },
-        retrieval_hits=[],
-        workflow_result={
-            "draft": "Needs a safer angle.",
-            "review_notes": ["Claims need proof."],
-            "open_questions": ["Can we reframe the promise?"],
-        },
-    )
-    client.post(f"/reviews/{task.id}/start")
-    client.post(
-        f"/reviews/{task.id}/reject",
-        json={"rejection_reason": "Unsupported claim."},
-    )
-
-    rerun_response = client.post(
-        f"/reviews/{task.id}/rerun",
-        json={"rerun_reason": "Regenerate with a safer brand angle."},
-    )
-
-    assert rerun_response.status_code == 200
-    rerun_task = rerun_response.json()
-    assert rerun_task["status"] == TaskStatus.QUEUED
-    assert rerun_task["review"]["rerun_reason"] == "Regenerate with a safer brand angle."
-    enqueue_mock.assert_called_once_with(str(task.id))
-
-
-def test_review_routes_reject_invalid_state_transitions(
-    client,
-    session: Session,
-) -> None:
-    repository = TaskRepository(session)
-    task = repository.create_task(input_type="text", content="This task is still queued.")
-
-    start_response = client.post(f"/reviews/{task.id}/start")
-
-    assert start_response.status_code == 409
-    assert start_response.json()["detail"] == "Task is not ready for review."
-
-    approve_response = client.post(
-        f"/reviews/{task.id}/approve",
-        json={
-            "edited_understanding": None,
-            "edited_retrieval_hits": None,
-            "edited_workflow_result": None,
-            "not_adopted_items": [],
-            "reviewer_note": "Cannot approve directly.",
-        },
-    )
-
-    assert approve_response.status_code == 409
-    assert approve_response.json()["detail"] == "Task must be in reviewing before this action."
-
-
-def test_review_rerun_does_not_enqueue_when_task_is_not_rejected(
-    client,
-    session: Session,
-    monkeypatch,
-) -> None:
-    enqueue_mock = MagicMock()
-    monkeypatch.setattr("app.api.routes_reviews.run_task_pipeline.delay", enqueue_mock)
-
-    repository = TaskRepository(session)
-    task = repository.create_task(input_type="text", content="This task never reached rejected state.")
-
-    rerun_response = client.post(
-        f"/reviews/{task.id}/rerun",
-        json={"rerun_reason": "This should not queue."},
-    )
-
-    assert rerun_response.status_code == 409
-    assert rerun_response.json()["detail"] == "Task must be rejected before rerun."
-    enqueue_mock.assert_not_called()
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["event_type"] for item in payload] == [
+        "export_created",
+        "snapshot_persisted",
+        "pipeline_completed",
+    ]
+    assert payload[0]["task_id"] == str(task.id)
+    assert payload[0]["summary"]
+    assert payload[0]["details"]["export_type"] == "markdown"
 
 
 def test_export_create_and_detail_return_reviewed_output_artifact(
@@ -377,7 +230,7 @@ def test_export_create_and_detail_return_reviewed_output_artifact(
     task = repository.create_task(input_type="text", content="Export this reviewed content.")
     repository.update_pipeline_results(
         task=task,
-        status=TaskStatus.REVIEW_PENDING,
+        status=TaskStatus.COMPLETED,
         understanding={
             "summary": "Generated summary",
             "audience": ["brand"],
@@ -385,23 +238,11 @@ def test_export_create_and_detail_return_reviewed_output_artifact(
         },
         retrieval_hits=[],
         workflow_result={
-            "draft": "Generated draft that should not be exported directly.",
+            "draft": "Generated draft that is already export ready.",
             "review_notes": ["Generated note"],
             "open_questions": ["Generated question"],
         },
     )
-    client.post(f"/reviews/{task.id}/start")
-    client.post(f"/reviews/{task.id}/approve", json={
-        "edited_understanding": None,
-        "edited_retrieval_hits": [],
-        "edited_workflow_result": {
-            "draft": "Reviewed export-ready draft.",
-            "review_notes": ["Approved note"],
-            "open_questions": [],
-        },
-        "not_adopted_items": [],
-        "reviewer_note": "Approved for export.",
-    })
 
     create_response = client.post(
         "/exports",
@@ -435,7 +276,7 @@ def test_export_requires_approved_task(
     )
 
     assert create_response.status_code == 409
-    assert create_response.json()["detail"] == "Task must be approved before export."
+    assert create_response.json()["detail"] == "Task must have a stable snapshot before export."
 
 
 def test_export_artifact_download_returns_completed_file_contents(
@@ -446,7 +287,7 @@ def test_export_artifact_download_returns_completed_file_contents(
     task = repository.create_task(input_type="text", content="Download this reviewed export.")
     repository.update_pipeline_results(
         task=task,
-        status=TaskStatus.REVIEW_PENDING,
+        status=TaskStatus.COMPLETED,
         understanding={
             "summary": "Generated summary",
             "audience": ["brand"],
@@ -454,24 +295,9 @@ def test_export_artifact_download_returns_completed_file_contents(
         },
         retrieval_hits=[],
         workflow_result={
-            "draft": "Generated draft that should not be exported directly.",
+            "draft": "Generated export-ready draft.",
             "review_notes": ["Generated note"],
             "open_questions": ["Generated question"],
-        },
-    )
-    client.post(f"/reviews/{task.id}/start")
-    client.post(
-        f"/reviews/{task.id}/approve",
-        json={
-            "edited_understanding": None,
-            "edited_retrieval_hits": [],
-            "edited_workflow_result": {
-                "draft": "Reviewed export-ready draft.",
-                "review_notes": ["Approved note"],
-                "open_questions": [],
-            },
-            "not_adopted_items": [],
-            "reviewer_note": "Approved for export.",
         },
     )
 
@@ -491,7 +317,7 @@ def test_export_artifact_download_returns_completed_file_contents(
     download_response = client.get(f"/exports/{completed_job.id}/artifact")
 
     assert download_response.status_code == 200
-    assert "Reviewed export-ready draft." in download_response.text
+    assert "Generated export-ready draft." in download_response.text
     assert download_response.headers["content-type"].startswith("text/markdown")
 
 
@@ -507,7 +333,7 @@ def test_export_artifact_download_requires_completed_job(
     task = repository.create_task(input_type="text", content="Export still queued.")
     repository.update_pipeline_results(
         task=task,
-        status=TaskStatus.REVIEW_PENDING,
+        status=TaskStatus.COMPLETED,
         understanding={
             "summary": "Generated summary",
             "audience": ["brand"],
@@ -518,17 +344,6 @@ def test_export_artifact_download_requires_completed_job(
             "draft": "Generated draft.",
             "review_notes": [],
             "open_questions": [],
-        },
-    )
-    client.post(f"/reviews/{task.id}/start")
-    client.post(
-        f"/reviews/{task.id}/approve",
-        json={
-            "edited_understanding": None,
-            "edited_retrieval_hits": [],
-            "edited_workflow_result": None,
-            "not_adopted_items": [],
-            "reviewer_note": "Approved for export.",
         },
     )
 
@@ -544,6 +359,107 @@ def test_export_artifact_download_requires_completed_job(
 
     assert download_response.status_code == 409
     assert download_response.json()["detail"] == "Export artifact is not ready."
+
+
+def test_completed_task_can_create_follow_up_export_job(
+    client,
+    session: Session,
+    monkeypatch,
+) -> None:
+    enqueue_mock = MagicMock()
+    monkeypatch.setattr("app.api.routes_exports.run_export_job.delay", enqueue_mock)
+
+    repository = TaskRepository(session)
+    task = repository.create_task(input_type="text", content="Export this task twice.")
+    repository.update_pipeline_results(
+        task=task,
+        status=TaskStatus.COMPLETED,
+        understanding={
+            "summary": "Generated summary",
+            "audience": ["brand"],
+            "key_points": ["Generated point"],
+        },
+        retrieval_hits=[],
+        workflow_result={
+            "draft": "Generated draft.",
+            "review_notes": [],
+            "open_questions": [],
+        },
+    )
+
+    first_create_response = client.post(
+        "/exports",
+        json={"task_id": str(task.id), "export_type": "markdown"},
+    )
+    assert first_create_response.status_code == 201
+
+    from app.repositories.export_job_repository import ExportJobRepository
+    from app.services.export_service import ExportService
+
+    export_service = ExportService(repository, ExportJobRepository(session))
+    export_service.export_job(first_create_response.json()["id"])
+
+    second_create_response = client.post(
+        "/exports",
+        json={"task_id": str(task.id), "export_type": "structured_text"},
+    )
+
+    assert second_create_response.status_code == 201
+    assert second_create_response.json()["export_type"] == "structured_text"
+
+
+def test_export_job_list_returns_latest_first_and_can_filter_by_task(
+    client,
+    session: Session,
+    monkeypatch,
+) -> None:
+    enqueue_mock = MagicMock()
+    monkeypatch.setattr("app.api.routes_exports.run_export_job.delay", enqueue_mock)
+
+    repository = TaskRepository(session)
+
+    task_one = repository.create_task(input_type="text", content="First export task.")
+    task_two = repository.create_task(input_type="text", content="Second export task.")
+
+    for task in (task_one, task_two):
+        repository.update_pipeline_results(
+            task=task,
+            status=TaskStatus.COMPLETED,
+            understanding={
+                "summary": "Generated summary",
+                "audience": ["brand"],
+                "key_points": ["Generated point"],
+            },
+            retrieval_hits=[],
+            workflow_result={
+                "draft": "Generated draft.",
+                "review_notes": [],
+                "open_questions": [],
+            },
+        )
+
+    first_job = client.post(
+        "/exports",
+        json={"task_id": str(task_one.id), "export_type": "markdown"},
+    ).json()
+    second_job = client.post(
+        "/exports",
+        json={"task_id": str(task_two.id), "export_type": "structured_text"},
+    ).json()
+
+    list_response = client.get("/exports")
+
+    assert list_response.status_code == 200
+    jobs = list_response.json()
+    assert [job["id"] for job in jobs[:2]] == [second_job["id"], first_job["id"]]
+
+    filtered_response = client.get("/exports", params={"task_id": str(task_one.id)})
+
+    assert filtered_response.status_code == 200
+    filtered_jobs = filtered_response.json()
+    assert len(filtered_jobs) == 1
+    assert filtered_jobs[0]["id"] == first_job["id"]
+    assert filtered_jobs[0]["task_id"] == str(task_one.id)
 
 
 def test_create_file_task_accepts_multipart_upload_and_enqueues_processing(
@@ -601,6 +517,93 @@ def test_knowledge_index_local_registers_document_and_enqueues_index_job(
     enqueue_mock.assert_called_once_with(document["id"])
 
 
+def test_knowledge_document_list_returns_registered_documents_in_latest_first_order(
+    client,
+    session: Session,
+    tmp_path,
+) -> None:
+    from app.repositories.knowledge_repository import KnowledgeRepository
+
+    repository = KnowledgeRepository(session)
+
+    older_file = tmp_path / "older.md"
+    older_file.write_text("# Older\n\nOlder guidance.\n", encoding="utf-8")
+    newer_file = tmp_path / "newer.md"
+    newer_file.write_text("# Newer\n\nNewer guidance.\n", encoding="utf-8")
+
+    repository.create_document(
+        title="Older Guide",
+        source_path=str(older_file),
+        source_type="guide",
+        domain="brand",
+    )
+    repository.create_document(
+        title="Newer Guide",
+        source_path=str(newer_file),
+        source_type="faq",
+        domain="content-ops",
+    )
+
+    response = client.get("/knowledge/documents")
+
+    assert response.status_code == 200
+    documents = response.json()
+    assert [item["title"] for item in documents] == ["Newer Guide", "Older Guide"]
+    assert documents[0]["source_type"] == "faq"
+    assert documents[1]["domain"] == "brand"
+
+
+def test_knowledge_document_detail_returns_chunk_preview_for_indexed_document(
+    client,
+    session: Session,
+    tmp_path,
+) -> None:
+    from app.models import KnowledgeDocumentStatus
+    from app.repositories.knowledge_repository import KnowledgeRepository
+
+    repository = KnowledgeRepository(session)
+
+    source_file = tmp_path / "playbook.md"
+    source_file.write_text("# Playbook\n\nKeep reviewer-visible evidence attached.\n", encoding="utf-8")
+
+    document = repository.create_document(
+        title="Launch Playbook",
+        source_path=str(source_file),
+        source_type="guide",
+        domain="brand",
+    )
+    repository.replace_chunks(
+        document=document,
+        contents=[
+            "Keep reviewer-visible evidence attached to every generated recommendation.",
+            "Flag uncertain claims before approval so the final export does not hide risk.",
+        ],
+    )
+    repository.set_document_status(
+        document=document,
+        status=KnowledgeDocumentStatus.INDEXED,
+        chunk_count=2,
+    )
+
+    response = client.get(f"/knowledge/documents/{document.id}")
+
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["title"] == "Launch Playbook"
+    assert detail["status"] == "indexed"
+    assert detail["chunk_count"] == 2
+    assert detail["chunk_preview"] == [
+        {
+            "chunk_index": 0,
+            "content_preview": "Keep reviewer-visible evidence attached to every generated recommendation.",
+        },
+        {
+            "chunk_index": 1,
+            "content_preview": "Flag uncertain claims before approval so the final export does not hide risk.",
+        },
+    ]
+
+
 def test_auth_gate_requires_bearer_token_when_configured(
     client,
     monkeypatch,
@@ -634,5 +637,62 @@ def test_auth_gate_requires_bearer_token_when_configured(
     assert health_response.status_code == 200
 
     monkeypatch.delenv("API_ACCESS_TOKEN", raising=False)
+    get_settings.cache_clear()
+    app_main.settings = get_settings()
+
+
+def test_password_login_issues_signed_token_and_protects_routes(
+    client,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("API_ACCESS_TOKEN", raising=False)
+    monkeypatch.setenv("AUTH_LOGIN_USERNAME", "operator")
+    monkeypatch.setenv("AUTH_LOGIN_PASSWORD", "open-sesame")
+    monkeypatch.setenv("AUTH_SECRET_KEY", "0123456789abcdef0123456789abcdef")
+
+    from app.core.settings import get_settings
+    import app.main as app_main
+
+    get_settings.cache_clear()
+    app_main.settings = get_settings()
+
+    config_response = client.get("/auth/config")
+
+    assert config_response.status_code == 200
+    assert config_response.json()["auth_mode"] == "password_login"
+
+    unauthorized_response = client.get("/tasks")
+    assert unauthorized_response.status_code == 401
+    assert unauthorized_response.json()["detail"] == "Missing or invalid access token."
+
+    bad_login_response = client.post(
+        "/auth/login",
+        json={"username": "operator", "password": "wrong-password"},
+    )
+    assert bad_login_response.status_code == 401
+    assert bad_login_response.json()["detail"] == "Invalid username or password."
+
+    login_response = client.post(
+        "/auth/login",
+        json={"username": "operator", "password": "open-sesame"},
+    )
+    assert login_response.status_code == 200
+    login_payload = login_response.json()
+    assert login_payload["token_type"] == "bearer"
+    assert login_payload["username"] == "operator"
+    assert login_payload["access_token"]
+
+    auth_headers = {"Authorization": f"Bearer {login_payload['access_token']}"}
+
+    me_response = client.get("/auth/me", headers=auth_headers)
+    assert me_response.status_code == 200
+    assert me_response.json()["username"] == "operator"
+    assert me_response.json()["auth_mode"] == "password_login"
+
+    tasks_response = client.get("/tasks", headers=auth_headers)
+    assert tasks_response.status_code == 200
+
+    for env_name in ("AUTH_LOGIN_USERNAME", "AUTH_LOGIN_PASSWORD", "AUTH_SECRET_KEY"):
+        monkeypatch.delenv(env_name, raising=False)
     get_settings.cache_clear()
     app_main.settings = get_settings()

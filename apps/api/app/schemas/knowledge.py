@@ -32,3 +32,19 @@ class KnowledgeDocumentRead(BaseModel):
     error_message: str | None = Field(default=None, description="Latest indexing failure detail.")
     created_at: datetime = Field(description="UTC timestamp when the document was registered.")
     updated_at: datetime = Field(description="UTC timestamp when the document last changed.")
+
+
+class KnowledgeChunkPreviewRead(BaseModel):
+    """Reviewer-visible preview for one indexed chunk."""
+
+    chunk_index: int = Field(description="Stable chunk order inside the source document.")
+    content_preview: str = Field(description="Readable preview content from the indexed chunk.")
+
+
+class KnowledgeDocumentDetailRead(KnowledgeDocumentRead):
+    """Richer knowledge document detail used by the task console."""
+
+    chunk_preview: list[KnowledgeChunkPreviewRead] = Field(
+        default_factory=list,
+        description="Indexed chunk previews shown to reviewers for quick inspection.",
+    )

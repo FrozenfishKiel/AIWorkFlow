@@ -1,54 +1,61 @@
-from fastapi import Depends, FastAPI
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
 
+from app.api.routes_auth import router as auth_router
 from app.api.routes_exports import router as exports_router
 from app.api.routes_knowledge import router as knowledge_router
-from app.api.routes_reviews import router as reviews_router
+from app.api.routes_product_content import router as product_content_router
 from app.api.routes_tasks import router as tasks_router
-from app.core.db import init_db
+from app.core.db import init_db, session_scope
 from app.core.logging import configure_logging
-from app.core.security import bearer_scheme, require_access_token
+from app.core.security import bearer_scheme, require_authenticated_user
 from app.core.settings import get_settings
+from app.services.default_ecommerce_knowledge import ensure_default_ecommerce_knowledge
 
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Initialize logging and persistence before serving requests."""
+
+    configure_logging()
+    init_db()
+    with session_scope() as session:
+        ensure_default_ecommerce_knowledge(session)
+    yield
+
 
 app = FastAPI(
     title="AI Content Production and Ops Workflow API",
     version="0.2.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=settings.cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-protected_route_dependencies = [
-    Depends(bearer_scheme),
-]
-
-
 def _require_access_token_dependency(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> None:
-    require_access_token(credentials)
+    require_authenticated_user(request, credentials)
 
 
+app.include_router(auth_router)
 app.include_router(exports_router, dependencies=[Depends(_require_access_token_dependency)])
 app.include_router(knowledge_router, dependencies=[Depends(_require_access_token_dependency)])
-app.include_router(reviews_router, dependencies=[Depends(_require_access_token_dependency)])
+app.include_router(product_content_router, dependencies=[Depends(_require_access_token_dependency)])
 app.include_router(tasks_router, dependencies=[Depends(_require_access_token_dependency)])
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    """Initialize logging and persistence before serving requests."""
-
-    configure_logging()
-    init_db()
 
 
 @app.get("/health")

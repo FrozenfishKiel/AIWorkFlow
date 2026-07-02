@@ -49,18 +49,27 @@ class RetrievalHit(BaseModel):
     """RAG hit that remains visible and attributable in the UI."""
 
     source_id: str = Field(description="Stable knowledge-base identifier for the cited source.")
-    title: str = Field(description="Human-readable title shown in the review UI.")
+    title: str = Field(description="Human-readable title shown in the task detail UI.")
     snippet: str = Field(description="Retrieved excerpt that supports the generated result.")
     reason: str = Field(description="Why this source was considered relevant for the task.")
 
 
-class WorkflowResult(BaseModel):
-    """Structured workflow output for review and export."""
+class EvidenceUsedItem(BaseModel):
+    """Selected evidence item carried from retrieval into workflow generation."""
 
-    draft: str = Field(description="Draft workflow result produced before human review.")
-    review_notes: list[str] = Field(description="Reviewer-visible checks or cautions for the draft.")
+    source_id: str = Field(description="Stable knowledge-base identifier for the cited source.")
+    title: str = Field(description="Human-readable title shown in the workflow evidence summary.")
+    snippet: str = Field(description="Retrieved excerpt that was actually selected into generation context.")
+    reason: str = Field(description="Why this evidence item survived retrieval and context selection.")
+
+
+class WorkflowResult(BaseModel):
+    """Structured workflow output for task inspection and export."""
+
+    draft: str = Field(description="Workflow result produced by the async pipeline.")
+    review_notes: list[str] = Field(description="Visible checks or cautions attached to the current result.")
     open_questions: list[str] = Field(description="Questions that still require human confirmation.")
-    evidence_used: list[dict[str, str]] = Field(
+    evidence_used: list[EvidenceUsedItem] = Field(
         default_factory=list,
         description="Explicit evidence items the generated draft claims to rely on.",
     )
@@ -70,7 +79,7 @@ class WorkflowResult(BaseModel):
     )
     manual_checks: list[str] = Field(
         default_factory=list,
-        description="Checks the reviewer should complete before approval.",
+        description="Checks an operator should complete before reuse or release.",
     )
     context_summary: dict[str, object] = Field(
         default_factory=dict,
@@ -81,116 +90,32 @@ class WorkflowResult(BaseModel):
         description="Human-readable trace of the current task pipeline decisions.",
     )
 
-
-class ReviewDecision(str):
-    """String literal wrapper kept simple for schema readability."""
-
-
-class ReviewSnapshot(BaseModel):
-    """Persisted reviewer-side snapshot for the current task."""
-
-    decision: Literal["in_review", "approved", "rejected"] = Field(
-        description="Current human review decision state for the task.",
-    )
-    reviewer_note: str | None = Field(
-        default=None,
-        description="Reviewer note explaining the current review action.",
-    )
-    rejection_reason: str | None = Field(
-        default=None,
-        description="Reason captured when the task is rejected.",
-    )
-    rerun_reason: str | None = Field(
-        default=None,
-        description="Reason captured when the rejected task is sent back for regeneration.",
-    )
-    not_adopted_items: list[str] = Field(
-        default_factory=list,
-        description="Explicit items the reviewer decided not to adopt.",
-    )
-    edited_understanding: UnderstandingResult | None = Field(
-        default=None,
-        description="Reviewer-adjusted understanding result kept for audit and export.",
-    )
-    edited_retrieval_hits: list[RetrievalHit] = Field(
-        default_factory=list,
-        description="Reviewer-adjusted retrieval evidence that replaces the generated defaults.",
-    )
-    edited_workflow_result: WorkflowResult | None = Field(
-        default=None,
-        description="Reviewer-adjusted workflow result used by downstream export flows.",
-    )
-
-
 class ApprovedSnapshot(BaseModel):
-    """Canonical reviewed snapshot that downstream export consumes.
+    """Canonical stable snapshot that downstream export consumes.
 
-    This schema exists to make the ownership boundary explicit: once a task is
-    approved, downstream consumers should read this snapshot rather than trying
-    to reconstruct the "latest" state from mutable review or generation fields.
+    The field name is still legacy, but the ownership boundary is now the same:
+    downstream consumers should read this frozen snapshot rather than trying to
+    reconstruct the "latest" state from mutable live pipeline fields.
     """
 
     understanding: UnderstandingResult | None = Field(
         default=None,
-        description="Approved understanding payload after review decisions are applied.",
+        description="Stable understanding payload frozen for downstream consumption.",
     )
     retrieval_hits: list[RetrievalHit] = Field(
         default_factory=list,
-        description="Approved reviewer-visible retrieval evidence.",
+        description="Stable retrieval evidence frozen for downstream consumption.",
     )
     workflow_result: WorkflowResult | None = Field(
         default=None,
-        description="Approved workflow result used for export generation.",
-    )
-
-
-class ReviewUpdateRequest(BaseModel):
-    """Payload used to save reviewer edits while a task is being reviewed."""
-
-    edited_understanding: UnderstandingResult | None = Field(
-        default=None,
-        description="Optional reviewer replacement for the understanding result.",
-    )
-    edited_retrieval_hits: list[RetrievalHit] | None = Field(
-        default=None,
-        description="Optional reviewer replacement list for retrieval hits. Null keeps the current value.",
-    )
-    edited_workflow_result: WorkflowResult | None = Field(
-        default=None,
-        description="Optional reviewer replacement for the generated workflow result.",
-    )
-    not_adopted_items: list[str] = Field(
-        default_factory=list,
-        description="Items the reviewer explicitly chooses not to adopt.",
-    )
-    reviewer_note: str | None = Field(
-        default=None,
-        description="Free-text reviewer note for the saved review state.",
-    )
-
-
-class ReviewRejectRequest(BaseModel):
-    """Payload for rejecting a task during review."""
-
-    rejection_reason: str = Field(
-        min_length=1,
-        description="Human-readable reason explaining why the task was rejected.",
-    )
-
-
-class ReviewRerunRequest(BaseModel):
-    """Payload for sending a rejected task back through the async pipeline."""
-
-    rerun_reason: str = Field(
-        min_length=1,
-        description="Human-readable reason explaining what should change on rerun.",
+        description="Stable workflow result used for export generation.",
     )
 
 
 class ExportJobCreateRequest(BaseModel):
-    """Payload used to request an export from an approved task."""
+    """Payload used to request an export from a completed task snapshot."""
 
-    task_id: UUID = Field(description="Approved task identifier to export.")
+    task_id: UUID = Field(description="Completed task identifier to export.")
     export_type: Literal["markdown", "structured_text"] = Field(
         description="Export format requested by the user.",
     )
@@ -232,16 +157,12 @@ class TaskRead(BaseModel):
     understanding: UnderstandingResult | None = None
     retrieval_hits: list[RetrievalHit] = Field(
         default_factory=list,
-        description="Visible retrieval evidence shown to the reviewer.",
+        description="Visible retrieval evidence shown in the task detail view.",
     )
     workflow_result: WorkflowResult | None = None
-    review: ReviewSnapshot | None = Field(
-        default=None,
-        description="Current persisted human review state, including editable reviewer overrides before approval.",
-    )
     approved_snapshot: ApprovedSnapshot | None = Field(
         default=None,
-        description="Canonical reviewed snapshot that export and other downstream flows must consume after approval.",
+        description="Canonical stable snapshot that export and other downstream flows must consume.",
     )
     created_at: datetime = Field(description="UTC timestamp when the task was created.")
     updated_at: datetime = Field(description="UTC timestamp when the task last changed.")

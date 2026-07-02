@@ -14,6 +14,11 @@ API_ROOT = REPO_ROOT / "apps" / "api"
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
+import os
+
+os.environ["TASK_GENERATION_PROVIDER"] = "deterministic"
+os.environ["RETRIEVAL_PROFILE_PROVIDER"] = "deterministic"
+
 import app.main as app_main
 from app.core.db import get_session
 from app.core.settings import get_settings

@@ -35,3 +35,6 @@ def test_knowledge_index_service_indexes_local_markdown_into_chunks(
     assert indexed_document.chunk_count == len(chunks)
     assert indexed_document.chunk_count > 0
     assert "practical tone" in chunks[0].content.lower()
+    assert chunks[0].retrieval_text
+    assert chunks[0].embedding_vector
+    assert any(value != 0 for value in chunks[0].embedding_vector)

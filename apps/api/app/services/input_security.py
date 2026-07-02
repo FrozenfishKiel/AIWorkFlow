@@ -19,7 +19,7 @@ def _reject_private_ip(ip_text: str) -> None:
   ip = ipaddress.ip_address(ip_text)
   if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
     raise HTTPException(
-      status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+      status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
       detail="Private or local network URLs are not allowed.",
     )
 
@@ -35,7 +35,7 @@ def _validate_hostname_resolution(hostname: str) -> None:
     resolved = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
   except OSError as error:
     raise HTTPException(
-      status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+      status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
       detail="URL hostname could not be resolved safely.",
     ) from error
 
@@ -54,21 +54,21 @@ def validate_public_url(url: str) -> str:
   parsed = urlparse(url)
   if parsed.scheme not in {"http", "https"}:
     raise HTTPException(
-      status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+      status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
       detail="Only public http/https URLs are allowed.",
     )
 
   hostname = parsed.hostname
   if not hostname:
     raise HTTPException(
-      status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+      status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
       detail="URL hostname is required.",
     )
 
   lowered = hostname.lower()
   if lowered in {"localhost", "127.0.0.1", "::1"}:
     raise HTTPException(
-      status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+      status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
       detail="Localhost URLs are not allowed.",
     )
 

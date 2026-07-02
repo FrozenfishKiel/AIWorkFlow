@@ -67,6 +67,22 @@ function Invoke-ComposeCheck {
     }
 }
 
+function Invoke-CurrentDocChecks {
+    if (-not (Test-Path $ProjectPython)) {
+        throw "Project Python not found: $ProjectPython"
+    }
+
+    Push-Location $ApiRoot
+    try {
+        Invoke-Step "Current doc drift check" {
+            & $ProjectPython -m pytest tests/unit/test_current_docs_contract.py -q
+            if ($LASTEXITCODE -ne 0) { throw "current doc contract test failed" }
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
 function Invoke-ApiChecks {
     if (-not (Test-Path $ProjectPython)) {
         throw "Project Python not found: $ProjectPython"
@@ -152,6 +168,7 @@ Write-Host "Scope: $Scope"
 switch ($Scope) {
     "api" {
         Invoke-ComposeCheck
+        Invoke-CurrentDocChecks
         Invoke-ApiChecks
         Invoke-AcceptanceChecks
     }
@@ -160,6 +177,7 @@ switch ($Scope) {
     }
     "all" {
         Invoke-ComposeCheck
+        Invoke-CurrentDocChecks
         Invoke-ApiChecks
         Invoke-AcceptanceChecks
         Invoke-WebChecks

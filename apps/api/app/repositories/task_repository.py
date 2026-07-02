@@ -72,10 +72,11 @@ class TaskRepository:
         retrieval_hits: list[dict[str, object]],
         workflow_result: dict[str, object],
     ) -> Task:
-        """Store the structured outputs for the completed pre-review pipeline.
+        """Store the structured outputs for the latest successful pipeline run.
 
-        Successful pipeline completion also clears any prior error so re-runs do
-        not leave stale failure messages attached to reviewer-visible results.
+        The current main chain no longer waits for a synchronous human approval
+        step before export. Successful completion therefore also freezes a
+        stable export snapshot in the legacy ``approved_snapshot`` field.
         """
 
         task.status = status
@@ -84,27 +85,11 @@ class TaskRepository:
         task.understanding = understanding
         task.retrieval_hits = retrieval_hits
         task.workflow_result = workflow_result
-        task.updated_at = datetime.now(timezone.utc)
-        self.session.add(task)
-        self.session.commit()
-        self.session.refresh(task)
-        return task
-
-    def save_review(
-        self,
-        *,
-        task: Task,
-        status: TaskStatus,
-        review: dict[str, object],
-        approved_snapshot: dict[str, object] | None = None,
-    ) -> Task:
-        """Persist the current human review snapshot and aligned task status."""
-
-        task.status = status
-        task.current_stage = status
-        task.error_message = None
-        task.review = review
-        task.approved_snapshot = approved_snapshot
+        task.approved_snapshot = {
+            "understanding": understanding,
+            "retrieval_hits": retrieval_hits,
+            "workflow_result": workflow_result,
+        }
         task.updated_at = datetime.now(timezone.utc)
         self.session.add(task)
         self.session.commit()

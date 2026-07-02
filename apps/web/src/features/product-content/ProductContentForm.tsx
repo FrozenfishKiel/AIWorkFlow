@@ -44,7 +44,7 @@ export function ProductContentForm({ onSubmit, isSubmitting = false }: ProductCo
     <section className="panel">
       <div className="panel__header">
         <h2>输入商品任务</h2>
-        <p>填写商品基础信息，再补一句这次要生成什么内容。系统会自动结合内置电商资料底座输出三类高质量初稿。</p>
+        <p>补全商品关键信息，开始这一轮内容起稿。</p>
       </div>
 
       <form className="form" onSubmit={handleSubmit}>

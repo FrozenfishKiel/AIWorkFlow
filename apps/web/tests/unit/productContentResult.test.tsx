@@ -148,6 +148,6 @@ describe("ProductContentResult", () => {
       } satisfies ProductContentJobDetail,
     });
 
-    expect(flattenText(tree)).toContain("正在生成这一轮商品内容初稿");
+    expect(flattenText(tree)).toContain("正在整理本轮内容草稿");
   });
 });

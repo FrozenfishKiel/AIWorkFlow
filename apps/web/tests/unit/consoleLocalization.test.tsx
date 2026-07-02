@@ -11,7 +11,11 @@ describe("product workspace localization", () => {
     expect(pageHtml).toContain("电商商品内容生产系统");
     expect(pageHtml).toContain("输入商品任务");
     expect(pageHtml).toContain("当前结果");
-    expect(pageHtml).toContain("高质量初稿");
+    expect(pageHtml).toContain("商品内容工作台");
+    expect(pageHtml).not.toContain("这次会得到什么");
+    expect(pageHtml).not.toContain("高质量初稿，不是最终发布稿");
+    expect(pageHtml).not.toContain("系统这次会怎么处理");
+    expect(pageHtml).not.toContain("适合怎么输入");
     expect(pageHtml).not.toContain("Task list");
     expect(pageHtml).not.toContain("任务列表");
   });

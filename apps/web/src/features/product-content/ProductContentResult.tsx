@@ -36,7 +36,7 @@ export function ProductContentResult({
       <section className="panel">
         <div className="panel__header">
           <h2>当前结果</h2>
-          <p>填写商品信息后，这里会显示商品理解、三类初稿、风险提醒和参考依据。</p>
+          <p>本轮生成完成后，结果会在这里展开。</p>
         </div>
       </section>
     );
@@ -49,7 +49,7 @@ export function ProductContentResult({
           <h2>{job.product.name}</h2>
           <p>{getJobStatusLabel(job.status)}</p>
         </div>
-        <p>正在生成这一轮商品内容初稿，请稍等片刻，结果会自动刷新出来。</p>
+        <p>正在整理本轮内容草稿，结果会自动刷新。</p>
       </section>
     );
   }

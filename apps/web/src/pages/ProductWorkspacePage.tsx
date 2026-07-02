@@ -250,28 +250,59 @@ export function ProductWorkspacePage() {
     }
   }
 
+  const workspaceStatus = authLoading
+    ? "正在连接服务"
+    : needsLogin
+      ? "等待登录"
+      : activeJobId
+        ? "本轮结果已连接"
+        : "准备开始";
+
   return (
-    <main className="shell">
+    <main className="shell shell--product">
       <header className="hero hero--product">
         <div className="hero__content">
-          <p className="eyebrow">AI 应用开发主链</p>
+          <p className="eyebrow">AI 内容工作流</p>
           <h1>电商商品内容生产系统</h1>
           <p className="hero__copy">
-            输入商品基础信息和一句任务描述，系统会先理解商品，再结合内置品牌口径、平台差异和历史优稿参考，
-            生成供运营二次编辑的高质量初稿。
+            围绕单个商品任务，把品牌口径、平台表达和历史优稿参考收进同一条生成链，直接交付可继续编辑的内容初稿。
           </p>
-          <div className="hero__steps">
-            <span className="hero-step">1. 填商品信息</span>
-            <span className="hero-step">2. 自动理解与资料匹配</span>
-            <span className="hero-step">3. 产出三类内容初稿</span>
+          <div className="hero__badges">
+            <span className="hero-badge">统一品牌口径</span>
+            <span className="hero-badge">多场景内容起稿</span>
+            <span className="hero-badge">结果可直接导出</span>
           </div>
         </div>
+        <aside className="hero__preview">
+          <section className="preview-card">
+            <p className="eyebrow eyebrow--light">商品内容工作台</p>
+            <h2>让内容团队先拿到能改、能复用、能交付的第一版。</h2>
+            <div className="preview-grid">
+              <article className="preview-tile">
+                <strong>统一商品叙事</strong>
+                <p>先沉淀卖点，再把不同内容形态拉回同一条口径线上。</p>
+              </article>
+              <article className="preview-tile">
+                <strong>覆盖三类产物</strong>
+                <p>卖点文案、详情页文案、种草短文会一起落到同一个结果页。</p>
+              </article>
+              <article className="preview-tile">
+                <strong>保留风险提醒</strong>
+                <p>参考依据和口径风险跟结果同屏展示，方便运营继续收尾。</p>
+              </article>
+            </div>
+            <div className="status-row">
+              <span className="status-pill">{workspaceStatus}</span>
+              {authUser ? <span className="status-pill status-pill--soft">操作者：{authUser.username}</span> : null}
+            </div>
+          </section>
+        </aside>
       </header>
 
       {pageError ? <p className="alert">{pageError}</p> : null}
 
       <section className="workspace">
-        <div className="workspace__sidebar">
+        <div className="workspace__rail">
           {needsLogin ? (
             <AuthPanel
               authMode="password_login"
@@ -282,21 +313,22 @@ export function ProductWorkspacePage() {
           ) : (
             <ProductContentForm onSubmit={handleSubmit} isSubmitting={submitLoading} />
           )}
-
-          <section className="panel">
-            <div className="panel__header panel__header--stacked">
-              <p className="eyebrow eyebrow--soft">这次会得到什么</p>
-              <h2>高质量初稿，不是最终发布稿</h2>
-            </div>
-            <div className="stack muted">
-              <p>系统会同时给出电商卖点文案、商品详情页文案和小红书 / 种草短文案。</p>
-              <p>结果默认是“可继续编辑”的初稿，会附带风险提醒和参考依据，方便你快速接着改。</p>
-              <p>如果你刷新页面，系统会尽量找回最近一次正在处理或刚生成完成的结果。</p>
-            </div>
-          </section>
         </div>
 
-        <div className="workspace__main">
+        <div className="workspace__stage">
+          <section className="panel panel--stage-intro">
+            <div className="panel__header panel__header--aligned">
+              <div>
+                <p className="eyebrow">商品内容工作台</p>
+                <h2>当前结果</h2>
+              </div>
+              <div className="status-row">
+                <span className="status-pill status-pill--soft">{workspaceStatus}</span>
+              </div>
+            </div>
+            <p className="muted">生成完成后，结果会在这里集中展开，方便继续编辑和导出。</p>
+          </section>
+
           <ProductContentResult
             job={job}
             isLoading={jobLoading}
@@ -306,42 +338,25 @@ export function ProductWorkspacePage() {
             onExportStructuredText={() => void handleExport("structured_text")}
             onDownloadExport={() => void handleDownloadExport()}
           />
-
-          <section className="secondary-grid">
-            <article className="support-card">
-              <h3>系统这次会怎么处理</h3>
-              <p className="muted">不是直接吐字，而是先做商品理解，再去匹配固定业务资料，最后统一生成三类内容。</p>
-              <div className="token-list">
-                <span className="token-chip">商品理解</span>
-                <span className="token-chip">资料匹配</span>
-                <span className="token-chip">卖点提炼</span>
-                <span className="token-chip">内容生成</span>
-                <span className="token-chip">风险检查</span>
-              </div>
-            </article>
-
-            <article className="support-card">
-              <h3>适合怎么输入</h3>
-              <p className="muted">越具体越好，尤其是商品规格、核心卖点、目标人群、场景和活动信息。</p>
-              <p className="muted">任务描述建议直接写清这次想突出什么，例如“偏通勤场景、强调清爽和便携”。</p>
-            </article>
-
-            <article className="support-card">
-              <h3>当前状态</h3>
-              <p className="muted">
-                {authLoading
-                  ? "正在连接服务并检查登录方式。"
-                  : needsLogin
-                    ? "当前环境启用了登录，请先登录再开始生成。"
-                    : activeJobId
-                      ? "已经连接到当前任务，结果区会自动刷新。"
-                      : "还没有开始本轮生成，先在左侧填写商品任务。"}
-              </p>
-              {authUser ? <p className="muted">当前操作者：{authUser.username}</p> : null}
-              {job ? <p className="muted">最近任务状态：{job.currentStage}</p> : null}
-            </article>
-          </section>
         </div>
+      </section>
+
+      <section className="value-strip" aria-label="产品亮点">
+        <article className="value-card">
+          <p className="eyebrow">Brand Fit</p>
+          <h2>把品牌语气和平台差异收进默认底座</h2>
+          <p>不用再来回翻资料，生成时就按固定业务知识一起收口。</p>
+        </article>
+        <article className="value-card">
+          <p className="eyebrow">Draft First</p>
+          <h2>先给运营一个能继续改的强初稿</h2>
+          <p>重点不是一次出终稿，而是让内容前半程不再从零开始。</p>
+        </article>
+        <article className="value-card">
+          <p className="eyebrow">Traceable</p>
+          <h2>结果、风险、参考依据放在同一个工作面</h2>
+          <p>减少切页和反复确认，让人机协作更像产品而不是后台。</p>
+        </article>
       </section>
     </main>
   );

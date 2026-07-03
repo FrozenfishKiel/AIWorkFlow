@@ -262,7 +262,7 @@ export function ProductWorkspacePage() {
     <main className="shell shell--product">
       <header className="hero hero--product">
         <div className="hero__content">
-          <p className="eyebrow">AI 内容工作流</p>
+          <p className="eyebrow">商品内容工作流</p>
           <h1>电商商品内容生产系统</h1>
           <p className="hero__copy">
             围绕单个商品任务，把品牌口径、平台表达和历史优稿参考收进同一条生成链，直接交付可继续编辑的内容初稿。
@@ -343,17 +343,17 @@ export function ProductWorkspacePage() {
 
       <section className="value-strip" aria-label="产品亮点">
         <article className="value-card">
-          <p className="eyebrow">Brand Fit</p>
+          <p className="eyebrow">品牌口径</p>
           <h2>把品牌语气和平台差异收进默认底座</h2>
           <p>不用再来回翻资料，生成时就按固定业务知识一起收口。</p>
         </article>
         <article className="value-card">
-          <p className="eyebrow">Draft First</p>
+          <p className="eyebrow">先出初稿</p>
           <h2>先给运营一个能继续改的强初稿</h2>
           <p>重点不是一次出终稿，而是让内容前半程不再从零开始。</p>
         </article>
         <article className="value-card">
-          <p className="eyebrow">Traceable</p>
+          <p className="eyebrow">参考可回看</p>
           <h2>结果、风险、参考依据放在同一个工作面</h2>
           <p>减少切页和反复确认，让人机协作更像产品而不是后台。</p>
         </article>

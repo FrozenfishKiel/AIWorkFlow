@@ -47,7 +47,8 @@ def test_settings_enable_password_login_mode_when_operator_credentials_are_confi
 def test_settings_allow_local_vite_ports_for_cors() -> None:
     settings = Settings()
 
-    assert settings.cors_origin_regex == r"^https?://(127\.0\.0\.1|localhost):51\d{2}$"
+    assert settings.cors_origin_regex == r"^https?://(127\.0\.0\.1|localhost):(41|51)\d{2}$"
+    assert settings.allow_inline_background_fallback is True
 
 
 def test_settings_reject_partial_password_login_configuration(

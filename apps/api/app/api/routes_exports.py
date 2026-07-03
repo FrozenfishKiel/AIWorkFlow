@@ -13,6 +13,10 @@ from app.repositories.export_job_repository import ExportJobRepository
 from app.repositories.task_repository import TaskRepository
 from app.schemas.task import ExportJobCreateRequest, ExportJobRead
 from app.services.export_service import ExportService
+from app.services.inline_background_fallback import (
+    run_export_job_inline,
+    should_use_inline_background_fallback,
+)
 from app.tasks.export_runner import run_export_job
 
 router = APIRouter(prefix="/exports", tags=["exports"])
@@ -34,6 +38,7 @@ def create_export_job(
     """Create an export job for a task with a stable snapshot and enqueue async generation."""
 
     service = _export_service(session)
+    job = None
     try:
         job = service.create_export_job(task_id=payload.task_id, export_type=payload.export_type)
         run_export_job.delay(str(job.id))
@@ -41,6 +46,14 @@ def create_export_job(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except Exception as exc:
+        if job is not None and should_use_inline_background_fallback():
+            run_export_job_inline(session, str(job.id))
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Export queue is temporarily unavailable.",
+            ) from exc
 
     repository = ExportJobRepository(session)
     return ExportJobRead.model_validate(repository.require_job(job.id))

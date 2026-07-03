@@ -103,9 +103,6 @@ function PrototypeHeader({
       <BrandMark onClick={onHome} />
       <div className="site-actions">
         {authUser ? <span className="site-user">当前操作者：{authUser.username}</span> : null}
-        <button type="button" className="ghost-button ghost-button--tight" onClick={onWorkspace}>
-          {authUser ? "查看结果" : "登录"}
-        </button>
         <button type="button" className="primary-button primary-button--tight" onClick={onWorkspace}>
           进入工作台
         </button>

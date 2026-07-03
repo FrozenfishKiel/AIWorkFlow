@@ -94,3 +94,23 @@ def test_get_product_content_job_returns_generated_ecommerce_outputs(
     assert body["generated_content"]["selling_points_copy"][0] == "轻薄成膜，通勤补涂不黏腻。"
     assert body["generated_content"]["detail_page_copy"].startswith("这款防晒霜主打轻透肤感")
     assert "绝对防晒" in body["generated_content"]["risk_notes"][0]
+
+
+def test_create_product_content_job_runs_inline_when_queue_is_unavailable(
+    client,
+    monkeypatch,
+) -> None:
+    def raise_enqueue(*args, **kwargs):
+        raise RuntimeError("broker unavailable")
+
+    monkeypatch.setattr("app.api.routes_product_content.run_task_pipeline.delay", raise_enqueue)
+
+    response = client.post("/product-content/jobs", json=build_product_payload())
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["status"] == TaskStatus.COMPLETED
+    assert payload["product_brief"]["summary"]
+    assert payload["generated_content"]["selling_points_copy"]
+    assert payload["generated_content"]["detail_page_copy"]
+    assert payload["generated_content"]["social_seed_copy"]

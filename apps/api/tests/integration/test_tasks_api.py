@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 from pathlib import Path
 
+import pytest
 from sqlmodel import Session
 
 from app.models.task import TaskStatus
@@ -41,19 +42,21 @@ def test_create_task_returns_queued_task_and_lists_it(
     assert listed_tasks[0]["status"] == TaskStatus.QUEUED
 
 
+@pytest.mark.parametrize("origin", ["http://127.0.0.1:4173", "http://127.0.0.1:5175"])
 def test_tasks_route_accepts_local_dev_cors_preflight_on_dynamic_vite_port(
     client,
+    origin: str,
 ) -> None:
     response = client.options(
         "/tasks",
         headers={
-            "Origin": "http://127.0.0.1:5175",
+            "Origin": origin,
             "Access-Control-Request-Method": "POST",
         },
     )
 
     assert response.status_code == 200
-    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5175"
+    assert response.headers["access-control-allow-origin"] == origin
 
 
 def test_create_task_rejects_file_input_for_json_endpoint(client) -> None:
@@ -209,6 +212,8 @@ def test_task_audit_log_endpoint_returns_latest_first_timeline(
     assert response.status_code == 200
     payload = response.json()
     assert [item["event_type"] for item in payload] == [
+        "export_completed",
+        "export_started",
         "export_created",
         "snapshot_persisted",
         "pipeline_completed",
@@ -319,6 +324,50 @@ def test_export_artifact_download_returns_completed_file_contents(
     assert download_response.status_code == 200
     assert "Generated export-ready draft." in download_response.text
     assert download_response.headers["content-type"].startswith("text/markdown")
+
+
+def test_export_job_runs_inline_when_queue_is_unavailable(
+    client,
+    session: Session,
+    monkeypatch,
+) -> None:
+    def raise_enqueue(*args, **kwargs):
+        raise RuntimeError("broker unavailable")
+
+    monkeypatch.setattr("app.api.routes_exports.run_export_job.delay", raise_enqueue)
+
+    repository = TaskRepository(session)
+    task = repository.create_task(input_type="text", content="Export inline when the queue is down.")
+    repository.update_pipeline_results(
+        task=task,
+        status=TaskStatus.COMPLETED,
+        understanding={
+            "summary": "Generated summary",
+            "audience": ["brand"],
+            "key_points": ["Generated point"],
+        },
+        retrieval_hits=[],
+        workflow_result={
+            "draft": "Generated export-ready draft.",
+            "review_notes": ["Generated note"],
+            "open_questions": ["Generated question"],
+        },
+    )
+
+    create_response = client.post(
+        "/exports",
+        json={"task_id": str(task.id), "export_type": "markdown"},
+    )
+
+    assert create_response.status_code == 201
+    export_job = create_response.json()
+    assert export_job["status"] == "completed"
+    assert export_job["file_path"]
+
+    download_response = client.get(f"/exports/{export_job['id']}/artifact")
+
+    assert download_response.status_code == 200
+    assert "Generated export-ready draft." in download_response.text
 
 
 def test_export_artifact_download_requires_completed_job(

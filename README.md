@@ -36,6 +36,7 @@
 ## 当前已落地
 
 - `FastAPI + SQLModel + Celery + Redis` 后端异步执行链
+- 本地 SQLite 环境下，若 Redis / Celery 不可用，商品生成与导出会自动回退为进程内同步执行
 - `POST /product-content/jobs` 与 `GET /product-content/jobs/{task_id}` 商品内容生成接口
 - DeepSeek / deterministic 双 provider 生成分支
 - 固定电商知识资料自动种子写入
@@ -60,11 +61,13 @@
 
 ## 快速开始
 
-1. 启动基础依赖
+1. 启动基础依赖（需要完整异步链时）
 
 ```powershell
 docker compose -f infra/docker-compose.yml up -d
 ```
+
+如果只是本地先跑通商品内容主流程，当前也可以不启动 Docker，API 会在本地 SQLite 环境下自动回退为同步执行。
 
 2. 安装 API 依赖
 

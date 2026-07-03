@@ -16,15 +16,27 @@ from app.schemas.product_content import (
     ProductInput,
     ReferenceContextRead,
 )
+from app.services.inline_background_fallback import (
+    run_task_pipeline_inline,
+    should_use_inline_background_fallback,
+)
 from app.tasks.task_runner import run_task_pipeline
 
 router = APIRouter(prefix="/product-content", tags=["product-content"])
 
 
-def _enqueue_task_or_raise(repository: TaskRepository, task_id: str, task_for_cleanup) -> None:
+def _enqueue_task_or_raise(
+    repository: TaskRepository,
+    session: Session,
+    task_id: str,
+    task_for_cleanup,
+) -> None:
     try:
         run_task_pipeline.delay(task_id)
     except Exception as exc:
+        if should_use_inline_background_fallback():
+            run_task_pipeline_inline(session, task_id)
+            return
         repository.delete_task(task_for_cleanup)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -80,8 +92,10 @@ def create_product_content_job(
         content=json.dumps(payload.model_dump(), ensure_ascii=False),
         knowledge_domain="ecommerce",
     )
-    _enqueue_task_or_raise(repository, str(task.id), task)
-    return _to_job_read(task)
+    _enqueue_task_or_raise(repository, session, str(task.id), task)
+    session.expire_all()
+    refreshed_task = repository.require_task(task.id)
+    return _to_job_read(refreshed_task)
 
 
 @router.get("/jobs/{task_id}", response_model=ProductContentJobRead)

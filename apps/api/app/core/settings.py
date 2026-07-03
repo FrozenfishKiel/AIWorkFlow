@@ -32,6 +32,20 @@ def _get_first_env(*names: str, default: str | None = None) -> str | None:
     return default
 
 
+def _parse_bool(value: str | None, *, default: bool) -> bool:
+    """Parse a permissive env boolean while preserving an explicit default."""
+
+    if value is None:
+        return default
+
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 def derive_default_repo_root(current_file: Path | None = None) -> Path:
     """Infer the repository root from the settings module location.
 
@@ -196,7 +210,15 @@ class Settings:
             "http://127.0.0.1:5173",
             "http://localhost:5173",
         ]
-        self.cors_origin_regex = r"^https?://(127\.0\.0\.1|localhost):51\d{2}$"
+        self.cors_origin_regex = r"^https?://(127\.0\.0\.1|localhost):(41|51)\d{2}$"
+        self.allow_inline_background_fallback = _parse_bool(
+            get_setting(
+                "ALLOW_INLINE_BACKGROUND_FALLBACK",
+                "AI_CONTENT_OPS_ALLOW_INLINE_BACKGROUND_FALLBACK",
+                default=None,
+            ),
+            default=self.database_url.startswith("sqlite"),
+        )
         self.auth_mode = self._derive_auth_mode()
         self._validate_auth_settings()
 

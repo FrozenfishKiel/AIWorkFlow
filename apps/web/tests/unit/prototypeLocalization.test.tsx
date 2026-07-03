@@ -12,6 +12,7 @@ describe("redesign prototype scope", () => {
     expect(html).toContain("生成商品内容初稿");
     expect(html).toContain("商品理解摘要");
 
+    expect(html).not.toContain(">登录<");
     expect(html).not.toContain("解决方案");
     expect(html).not.toContain("应用场景");
     expect(html).not.toContain("使用方式");

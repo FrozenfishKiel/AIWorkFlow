@@ -37,6 +37,10 @@
 - 主链底层仍是异步执行：
   - 创建任务后交给 Celery
   - 前端只围绕“当前这一轮生成结果”轮询
+- 本地默认 SQLite 环境下，如果 Redis / Celery 暂时不可用：
+  - `POST /product-content/jobs` 会自动回退为进程内同步执行
+  - `POST /exports` 也会在当前 API 进程内直接完成导出
+  - 这样本地联调不再强依赖 Docker 和独立 Worker
 - 生成 provider 当前支持：
   - `deepseek`
   - `deterministic`

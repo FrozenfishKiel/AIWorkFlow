@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { toProductInputFormValues, toPrototypeResultViewModel } from "../../src/prototype/prototypeContentAdapter";
+import { toProductInputFormValues, toPrototypeFormState, toPrototypeResultViewModel } from "../../src/prototype/prototypeContentAdapter";
 import type { ProductContentJobDetail } from "../../src/types/productContent";
 
 describe("prototype content adapter", () => {
@@ -31,7 +31,7 @@ describe("prototype content adapter", () => {
   });
 
   it("builds text-first result cards from the real job detail contract", () => {
-    const viewModel = toPrototypeResultViewModel({
+    const jobDetail = {
       id: "job-1",
       status: "completed",
       currentStage: "completed",
@@ -53,6 +53,13 @@ describe("prototype content adapter", () => {
         useScenarios: ["日常洁面", "换季维稳"],
         primaryValuePoints: ["温和净润", "泡沫细腻"],
       },
+      sellingStrategy: {
+        primaryAngle: "温和净润",
+        supportingAngles: ["泡沫细腻", "清洁后不紧绷"],
+        scenarioFocus: ["日常洁面", "换季维稳"],
+        expressionGuardrails: ["强调真实肤感", "避免过度功效承诺"],
+      },
+      inputAlerts: ["规格参数还可以补充更细。"],
       referenceContext: [
         {
           sourceId: "brand-tone-guide",
@@ -70,9 +77,13 @@ describe("prototype content adapter", () => {
       },
       createdAt: "2026-07-03T00:00:00Z",
       updatedAt: "2026-07-03T00:05:00Z",
-    } satisfies ProductContentJobDetail);
+    } satisfies ProductContentJobDetail;
+    const viewModel = toPrototypeResultViewModel(jobDetail);
 
     expect(viewModel.productBriefSummary).toContain("温和清洁");
+    expect(viewModel.sellingStrategy.primaryAngle).toBe("温和净润");
+    expect(viewModel.sellingStrategy.supportingAngles).toEqual(["泡沫细腻", "清洁后不紧绷"]);
+    expect(viewModel.inputAlerts).toEqual(["规格参数还可以补充更细。"]);
     expect(viewModel.sellingPoints).toEqual(["温和净润，清洁后不紧绷。"]);
     expect(viewModel.detailPageCopy).toContain("详情页");
     expect(viewModel.socialSeedCopy).toContain("泡沫很细");
@@ -81,6 +92,18 @@ describe("prototype content adapter", () => {
       title: "品牌语气规范",
       reason: "当前任务更适合自然松弛表达。",
       snippet: "强调真实肤感和日常体验。",
+    });
+
+    expect(toPrototypeFormState(jobDetail)).toEqual({
+      name: "氨基酸净澈洁面乳",
+      category: "个护清洁",
+      specifications: "150g\n氨基酸配方",
+      priceRange: "79-99 元",
+      feature: "温和净润\n泡沫细腻",
+      audience: "18-35 岁女性",
+      scenarios: "日常洁面\n换季维稳",
+      promotion: "夏季焕肤专题",
+      taskDescription: "生成电商卖点文案、详情页文案和小红书种草短文案。",
     });
   });
 });

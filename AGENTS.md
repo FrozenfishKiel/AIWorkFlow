@@ -30,6 +30,19 @@ When driving Codex here, prefer prompts with:
 Phase 1 is intentionally narrow. Preserve that boundary unless the user
 explicitly changes the spec.
 
+## Cost Assumptions
+
+- Public deployment, domain, hosting, and long-term operations cost are still
+  treated as constrained. Do not quietly expand work into a paid public
+  deployment path unless the user explicitly asks for it again.
+- AI application development cost that is intrinsic to the real chain itself
+  (for example real model calls needed for main-chain development, integration,
+  and formal testing) is allowed when the user asks to make the chain real or
+  to run formal testing.
+- Do not self-censor core AI chain work for fear of model cost once the user
+  has approved that work. The constraint is on unnecessary deployment/ops spend,
+  not on required AI chain validation.
+
 Do build:
 
 - a single-task workflow system
@@ -105,6 +118,10 @@ Use the repository verification entrypoint that matches the change scope:
 - `powershell -ExecutionPolicy Bypass -File scripts/qa/verify.ps1 -Scope all`
 
 If checks are missing for a touched area, say so plainly and note the gap.
+
+When the user asks for formal testing or end-to-end validation, do not stop at
+automated checks alone. Also run the project and use the product flow yourself
+when the local environment allows it.
 
 ## Documentation Updates
 

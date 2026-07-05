@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useState, type FormEvent } from "react";
 
-import { createExportJob, downloadExportArtifact, fetchExportJob } from "../services/exports";
-import { createProductContentJob, fetchProductContentJob } from "../services/productContent";
+import { createExportJob, downloadExportArtifact, fetchExportJob, listExportJobs } from "../services/exports";
+import { createProductContentJob, fetchProductContentJob, fetchProductContentJobAuditLogs } from "../services/productContent";
 import {
   fetchAuthConfig,
   fetchCurrentUser,
@@ -14,33 +14,34 @@ import type { ExportJobRecord } from "../types/export";
 import {
   getJobStatusLabel,
   isJobActive,
+  type ProductContentAuditLog,
   type ProductContentJobDetail,
   type ProductInputFormValues,
 } from "../types/productContent";
 import {
   toProductInputFormValues,
+  toPrototypeFormState,
   toPrototypeResultViewModel,
   type PrototypeFormState,
 } from "./prototypeContentAdapter";
+import { getJobLoadFailureViewState, getStoredJobRecoveryAction } from "../pages/productWorkspaceState";
 
 type Surface = "homepage" | "workspace";
 type ResultState = "loading" | "ready";
-type ResultTab = "全部" | "商品理解" | "卖点文案" | "详情页文案" | "种草短文案" | "风险提醒" | "参考依据";
 
-const OUTPUT_TABS: ResultTab[] = ["全部", "商品理解", "卖点文案", "详情页文案", "种草短文案", "风险提醒", "参考依据"];
 const POLLING_INTERVAL_MS = 4000;
 const ACTIVE_JOB_STORAGE_KEY = "ai-content-ops.prototype.active-job-id";
 
 const DEFAULT_FORM: PrototypeFormState = {
-  name: "氨基酸净澈洁面乳",
-  category: "个护清洁",
-  specifications: "150g\n氨基酸配方\n敏感肌可用",
-  priceRange: "79-99 元",
-  feature: "温和净润\n泡沫细腻\n清洁后不紧绷",
-  audience: "18-35 岁女性，关注温和清洁与肌肤舒缓",
-  scenarios: "日常洁面\n换季维稳\n早晚护肤",
-  promotion: "夏季焕肤专题，主打温和净澈",
-  taskDescription: "生成电商卖点文案、详情页文案和小红书种草短文案。",
+  name: "黑咖啡浓缩液",
+  category: "冲调饮品",
+  specifications: "30ml*7条\n冷水即溶\n便携小袋装",
+  priceRange: "39-49元",
+  feature: "冷水即溶\n0蔗糖\n便携提神\n黑咖风味纯粹",
+  audience: "通勤族、学生党、需要控糖提神的人群",
+  scenarios: "早八通勤\n午后犯困\n加班复习\n出差随身",
+  promotion: "夏季提神专题，主打低负担快冲快喝",
+  taskDescription: "生成电商卖点文案、详情页文案和种草短文案，重点突出便携提神、冷水即溶和低负担。",
 };
 
 function readStoredActiveJobId(): string {
@@ -121,21 +122,21 @@ function HeroPreviewCard() {
 
       <article className="hero-preview__panel">
         <p className="hero-preview__label">商品理解摘要</p>
-        <h3>温和清洁、净润肤感、适合日常反复使用</h3>
-        <p>这是一款强调温和清洁与舒缓肤感的洁面产品，适合以成分安心感和日常使用体验为主线展开表达。</p>
+        <h3>先把商品说对，再把文案写顺</h3>
+        <p>主链会先消化商品事实、场景、人群和表达边界，再组织三类可继续编辑的内容初稿。</p>
       </article>
 
       <div className="hero-preview__grid">
         <article className="hero-preview__panel hero-preview__panel--compact">
           <p className="hero-preview__label">卖点文案</p>
           <ul>
-            <li>氨基酸净澈配方，温和带走油脂与残留，不打扰肌肤舒适感。</li>
-            <li>细腻泡沫快速铺开，清洁过程更柔和，敏感时刻也能安心使用。</li>
+            <li>先讲用户能感知的利益点，不堆参数词。</li>
+            <li>把通勤、排队、换季这类场景直接带进表达里。</li>
           </ul>
         </article>
         <article className="hero-preview__panel hero-preview__panel--compact">
           <p className="hero-preview__label">种草短文案</p>
-          <p>最近在用这支氨基酸洁面乳，泡沫很细，洗完不是那种猛地拔干的感觉。</p>
+          <p>输出不会假装一步到终稿，而是交付一版能继续编辑、能快速带走的真实底稿。</p>
         </article>
       </div>
     </section>
@@ -143,7 +144,7 @@ function HeroPreviewCard() {
 }
 
 function CapabilityStrip() {
-  const items = ["固定业务参考", "三类初稿同屏输出", "风险提醒与参考依据", "支持结果导出"];
+  const items = ["固定业务参考", "三类初稿同屏输出", "生成依据单独查看", "支持结果导出"];
 
   return (
     <div className="capability-strip">
@@ -169,8 +170,8 @@ function FeatureStrip() {
       text: "系统交付的是卖点文案、详情页文案和种草短文案，不是假装一步出终稿。",
     },
     {
-      title: "把风险和依据留在结果旁边",
-      text: "方便运营直接判断、继续修改、再导出，不需要来回切换页面。",
+      title: "把生成依据单独整理出来",
+      text: "主结果区只放用户真正在意的内容结果，系统依据走单独入口查看。",
     },
   ];
 
@@ -197,10 +198,10 @@ function WorkspaceSidebar({ workspaceStatus }: { workspaceStatus: string }) {
         <strong>智绘商拍</strong>
       </div>
 
-      <nav className="workspace-sidebar__nav">
+      <div className="workspace-sidebar__nav" aria-label="当前工作区">
         <span>工作台</span>
         <span className="workspace-sidebar__nav-item workspace-sidebar__nav-item--active">内容生成</span>
-      </nav>
+      </div>
 
       <div className="workspace-sidebar__note">
         <small>当前状态</small>
@@ -365,6 +366,17 @@ function ResultCards({
 
   return (
     <div className="result-stack">
+      {viewModel.inputAlerts.length ? (
+        <article className="result-card result-card--alert">
+          <p className="result-card__eyebrow">输入提醒</p>
+          <ul className="result-list">
+            {viewModel.inputAlerts.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </article>
+      ) : null}
+
       <article className="result-card result-card--brief">
         <p className="result-card__eyebrow">商品理解摘要</p>
         <h4>{viewModel.productBriefSummary}</h4>
@@ -422,8 +434,8 @@ function ResultCards({
       <article className="result-card">
         <div className="result-card__header">
           <div>
-            <p className="result-card__eyebrow">参考依据</p>
-            <h4>当前命中的参考资料</h4>
+            <p className="result-card__eyebrow">导出交付</p>
+            <h4>当前结果可继续导出</h4>
           </div>
           <div className="workspace-actions">
             <button type="button" className="ghost-button ghost-button--tiny" disabled={exportLoading} onClick={onExportMarkdown}>
@@ -444,72 +456,301 @@ function ResultCards({
             ) : null}
           </div>
         </div>
-
-        {viewModel.references.length ? (
-          <div className="reference-grid">
-            {viewModel.references.map((item) => (
-              <article className="reference-card" key={`${item.title}-${item.reason}`}>
-                <strong>{item.title}</strong>
-                <p className="reference-card__reason">{item.reason}</p>
-                <p>{item.snippet}</p>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <p>当前没有命中可展示的资料引用。</p>
-        )}
+        <p>文案主结果留在工作台里查看，系统理解、参考资料、卖点提炼和风险提示放到“生成依据”里单独展开。</p>
       </article>
     </div>
   );
 }
 
+export function EvidenceDrawer({
+  job,
+  open,
+  onClose,
+}: {
+  job: ProductContentJobDetail | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  if (!open || !job) {
+    return null;
+  }
+
+  const viewModel = toPrototypeResultViewModel(job);
+  const riskItems = [...viewModel.inputAlerts, ...viewModel.riskNotes];
+
+  return (
+    <aside className="evidence-drawer" aria-label="生成依据">
+      <div className="evidence-drawer__panel">
+        <div className="evidence-drawer__header">
+          <div>
+            <p className="result-card__eyebrow">生成依据</p>
+            <h3>这次结果的系统依据</h3>
+          </div>
+          <button type="button" className="ghost-button ghost-button--tiny" onClick={onClose}>
+            收起
+          </button>
+        </div>
+
+        <div className="evidence-drawer__grid">
+          <article className="result-card">
+            <p className="result-card__eyebrow">系统理解</p>
+            <h4>{viewModel.productBriefSummary}</h4>
+            <p className="result-card__meta">目标人群：{viewModel.targetAudience}</p>
+            <p className="result-card__meta">
+              使用场景：{viewModel.useScenarios.length ? viewModel.useScenarios.join("、") : "未填写"}
+            </p>
+          </article>
+
+          <article className="result-card">
+            <p className="result-card__eyebrow">参考资料</p>
+            {viewModel.references.length ? (
+              <div className="reference-grid">
+                {viewModel.references.map((item) => (
+                  <article className="reference-card" key={`${item.title}-${item.reason}`}>
+                    <strong>{item.title}</strong>
+                    <p className="reference-card__reason">{item.reason}</p>
+                    <p>{item.snippet}</p>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p>当前没有命中可展示的资料引用。</p>
+            )}
+          </article>
+
+          <article className="result-card">
+            <p className="result-card__eyebrow">卖点提炼</p>
+            <div className="evidence-stack">
+              <p><strong>主打方向：</strong>{viewModel.sellingStrategy.primaryAngle}</p>
+              <p><strong>补充方向：</strong>{viewModel.sellingStrategy.supportingAngles.length ? viewModel.sellingStrategy.supportingAngles.join("、") : "暂无"}</p>
+              <p><strong>场景聚焦：</strong>{viewModel.sellingStrategy.scenarioFocus.length ? viewModel.sellingStrategy.scenarioFocus.join("、") : "暂无"}</p>
+              <p><strong>表达约束：</strong>{viewModel.sellingStrategy.expressionGuardrails.length ? viewModel.sellingStrategy.expressionGuardrails.join("；") : "暂无"}</p>
+            </div>
+          </article>
+
+          <article className="result-card">
+            <p className="result-card__eyebrow">风险提示</p>
+            {riskItems.length ? (
+              <ul className="result-list">
+                {riskItems.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>当前没有额外风险提示。</p>
+            )}
+          </article>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+export function DiagnosticsDrawer({
+  job,
+  open,
+  isLoading,
+  auditLogs,
+  exportJobs,
+  onClose,
+}: {
+  job: ProductContentJobDetail | null;
+  open: boolean;
+  isLoading: boolean;
+  auditLogs: ProductContentAuditLog[];
+  exportJobs: ExportJobRecord[];
+  onClose: () => void;
+}) {
+  if (!open || !job) {
+    return null;
+  }
+
+  const diagnostics = job.diagnostics;
+  const latestExportJob = exportJobs[0] ?? null;
+
+  return (
+    <aside className="evidence-drawer" aria-label="诊断后台">
+      <div className="evidence-drawer__panel">
+        <div className="evidence-drawer__header">
+          <div>
+            <p className="result-card__eyebrow">诊断后台</p>
+            <h3>这次任务的系统级诊断信息</h3>
+          </div>
+          <button type="button" className="ghost-button ghost-button--tiny" onClick={onClose}>
+            收起
+          </button>
+        </div>
+
+        {isLoading ? (
+          <div className="result-loading">
+            <div className="result-loading__line result-loading__line--wide" />
+            <div className="result-loading__block" />
+          </div>
+        ) : null}
+
+        {!isLoading ? (
+          <div className="evidence-drawer__grid">
+            <article className="result-card">
+              <p className="result-card__eyebrow">链路概览</p>
+              <div className="diagnostic-grid">
+                <p><strong>任务状态：</strong>{getJobStatusLabel(job.status)}</p>
+                <p><strong>当前阶段：</strong>{job.currentStage}</p>
+                <p><strong>生成 provider：</strong>{diagnostics?.generationProvider || "未记录"}</p>
+                <p><strong>检索 provider：</strong>{diagnostics?.retrievalProvider || "未记录"}</p>
+                <p><strong>召回 top-k：</strong>{diagnostics?.retrievalTopKRequested || 0}</p>
+                <p><strong>实际返回：</strong>{diagnostics?.retrievalTopKEffective || 0}</p>
+                <p><strong>候选命中：</strong>{diagnostics?.candidateHitCount || 0}</p>
+                <p><strong>最终选中：</strong>{diagnostics?.selectedHitCount || 0}</p>
+                <p><strong>弱检索：</strong>{diagnostics?.weakRetrieval ? "是" : "否"}</p>
+                <p><strong>去重移除：</strong>{diagnostics?.duplicateHitsRemoved || 0}</p>
+              </div>
+              {diagnostics?.retrievalQuery ? (
+                <div className="preview-field-list__item">
+                  <span>本轮检索 query</span>
+                  <p>{diagnostics.retrievalQuery}</p>
+                </div>
+              ) : null}
+              {diagnostics?.failureReason || job.errorMessage ? (
+                <div className="preview-field-list__item">
+                  <span>失败原因</span>
+                  <p>{diagnostics?.failureReason || job.errorMessage}</p>
+                </div>
+              ) : null}
+            </article>
+
+            <article className="result-card">
+              <p className="result-card__eyebrow">召回候选</p>
+              {job.retrievalCandidates.length ? (
+                <div className="reference-grid">
+                  {job.retrievalCandidates.map((item) => (
+                    <article className="reference-card" key={`${item.sourceId}-${item.rank ?? item.title}`}>
+                      <strong>
+                        {item.rank ? `#${item.rank} ` : ""}
+                        {item.title}
+                        {item.selected ? " · 已入选" : ""}
+                      </strong>
+                      <p className="reference-card__reason">{item.reason}</p>
+                      {typeof item.score === "number" ? <p>排序分：{item.score.toFixed(2)}</p> : null}
+                      {item.matchedTerms?.length ? <p>命中词：{item.matchedTerms.join("、")}</p> : null}
+                      {item.matchedPhrases?.length ? <p>命中短语：{item.matchedPhrases.join("、")}</p> : null}
+                      <p>{item.snippet}</p>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p>当前没有可展示的召回候选。</p>
+              )}
+            </article>
+
+            <article className="result-card">
+              <p className="result-card__eyebrow">导出状态</p>
+              {latestExportJob ? (
+                <div className="evidence-stack">
+                  <p><strong>最近一次导出：</strong>{latestExportJob.export_type}</p>
+                  <p><strong>状态：</strong>{latestExportJob.status}</p>
+                  {latestExportJob.file_path ? <p><strong>产物路径：</strong>{latestExportJob.file_path}</p> : null}
+                  {latestExportJob.error_message ? <p><strong>失败原因：</strong>{latestExportJob.error_message}</p> : null}
+                </div>
+              ) : (
+                <p>当前还没有导出记录。</p>
+              )}
+            </article>
+
+            <article className="result-card">
+              <p className="result-card__eyebrow">审计时间线</p>
+              {auditLogs.length ? (
+                <ul className="result-list">
+                  {auditLogs.map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.eventType}</strong> · {item.outcome === "failure" ? "失败" : "成功"} · {item.summary}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>当前还没有审计时间线。</p>
+              )}
+            </article>
+
+            <article className="result-card">
+              <p className="result-card__eyebrow">处理轨迹</p>
+              {job.processingTrace.length ? (
+                <ul className="result-list">
+                  {job.processingTrace.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>当前还没有处理轨迹。</p>
+              )}
+            </article>
+          </div>
+        ) : null}
+      </div>
+    </aside>
+  );
+}
+
 function WorkspaceCanvas({
-  preview,
+  authReady,
   authLoading,
   needsLogin,
   authSubmitting,
   authError,
   formState,
   resultState,
-  selectedTab,
   workspaceStatus,
   pageError,
   job,
   jobLoading,
   exportLoading,
   exportJob,
+  evidenceOpen,
+  diagnosticsOpen,
+  diagnosticsLoading,
+  auditLogs,
+  exportJobs,
   onFieldChange,
-  onTabChange,
   onLogin,
   onSubmit,
+  onOpenEvidence,
+  onCloseEvidence,
+  onOpenDiagnostics,
+  onCloseDiagnostics,
   onExportMarkdown,
   onExportStructuredText,
   onDownloadExport,
 }: {
-  preview: boolean;
+  authReady: boolean;
   authLoading: boolean;
   needsLogin: boolean;
   authSubmitting: boolean;
   authError: string;
   formState: PrototypeFormState;
   resultState: ResultState;
-  selectedTab: ResultTab;
   workspaceStatus: string;
   pageError: string;
   job: ProductContentJobDetail | null;
   jobLoading: boolean;
   exportLoading: boolean;
   exportJob: ReturnType<typeof toExportSummary> | null;
+  evidenceOpen: boolean;
+  diagnosticsOpen: boolean;
+  diagnosticsLoading: boolean;
+  auditLogs: ProductContentAuditLog[];
+  exportJobs: ExportJobRecord[];
   onFieldChange: <K extends keyof PrototypeFormState>(field: K, value: PrototypeFormState[K]) => void;
-  onTabChange: (next: ResultTab) => void;
   onLogin: (values: { username: string; password: string }) => Promise<void> | void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onOpenEvidence: () => void;
+  onCloseEvidence: () => void;
+  onOpenDiagnostics: () => void;
+  onCloseDiagnostics: () => void;
   onExportMarkdown: () => void;
   onExportStructuredText: () => void;
   onDownloadExport: () => void;
 }) {
   return (
-    <section className={preview ? "workspace-canvas workspace-canvas--preview" : "workspace-canvas"}>
+    <section className="workspace-canvas">
       <WorkspaceSidebar workspaceStatus={workspaceStatus} />
 
       <div className="workspace-stage">
@@ -524,7 +765,14 @@ function WorkspaceCanvas({
         {pageError ? <p className="workspace-error">{pageError}</p> : null}
 
         <div className="workspace-stage__main">
-          {needsLogin ? (
+          {!authReady || authLoading ? (
+            <section className="workspace-card input-card">
+              <div className="workspace-card__header">
+                <h3>连接工作台</h3>
+                <p>正在确认当前登录方式与工作台权限，请稍候。</p>
+              </div>
+            </section>
+          ) : needsLogin ? (
             <LoginCard
               authLoading={authLoading}
               authSubmitting={authSubmitting}
@@ -539,11 +787,11 @@ function WorkspaceCanvas({
               </div>
 
               <div className="workspace-card__body">
-                <ProductFields formState={formState} readOnly={preview} onFieldChange={onFieldChange} />
+                <ProductFields formState={formState} readOnly={false} onFieldChange={onFieldChange} />
               </div>
 
               <div className="workspace-card__footer">
-                <button type="submit" className="primary-button primary-button--block" disabled={preview || authLoading}>
+                <button type="submit" className="primary-button primary-button--block" disabled={authLoading}>
                   {resultState === "loading" ? "生成中..." : "生成商品内容初稿"}
                 </button>
               </div>
@@ -554,26 +802,21 @@ function WorkspaceCanvas({
             <div className="workspace-card__header workspace-card__header--row">
               <div>
                 <h3>当前结果</h3>
-                <p>系统会把商品理解、文案初稿、风险提醒和参考依据集中放在这里。</p>
+                <p>这里聚焦展示用户真正要带走的内容结果，系统依据放到单独入口查看。</p>
               </div>
+              {job ? (
+                <div className="workspace-actions">
+                  <button type="button" className="ghost-button ghost-button--tiny" onClick={onOpenEvidence}>
+                    查看生成依据
+                  </button>
+                  <button type="button" className="ghost-button ghost-button--tiny" onClick={onOpenDiagnostics}>
+                    诊断后台
+                  </button>
+                </div>
+              ) : null}
             </div>
 
-            <div className="tab-row">
-              {OUTPUT_TABS.map((item) => (
-                <button
-                  type="button"
-                  key={item}
-                  className={item === selectedTab ? "tab-chip tab-chip--active" : "tab-chip"}
-                  onClick={() => onTabChange(item)}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
-
-            {preview ? (
-              <EmptyResultState message="这里展示的是项目当前真实主流程结构，正式接入后会展示实时生成结果。" />
-            ) : resultState === "loading" || jobLoading ? (
+            {resultState === "loading" || jobLoading ? (
               <div className="result-loading">
                 <div className="result-loading__line result-loading__line--wide" />
                 <div className="result-loading__line" />
@@ -596,26 +839,26 @@ function WorkspaceCanvas({
           </section>
         </div>
       </div>
+
+      <EvidenceDrawer job={job} open={evidenceOpen} onClose={onCloseEvidence} />
+      <DiagnosticsDrawer
+        job={job}
+        open={diagnosticsOpen}
+        isLoading={diagnosticsLoading}
+        auditLogs={auditLogs}
+        exportJobs={exportJobs}
+        onClose={onCloseDiagnostics}
+      />
     </section>
   );
 }
 
 function Homepage({
   authLoading,
-  formState,
-  resultState,
-  selectedTab,
   onEnterWorkspace,
-  onFieldChange,
-  onTabChange,
 }: {
   authLoading: boolean;
-  formState: PrototypeFormState;
-  resultState: ResultState;
-  selectedTab: ResultTab;
   onEnterWorkspace: () => void;
-  onFieldChange: <K extends keyof PrototypeFormState>(field: K, value: PrototypeFormState[K]) => void;
-  onTabChange: (next: ResultTab) => void;
 }) {
   return (
     <main className="homepage-shell">
@@ -630,9 +873,6 @@ function Homepage({
             <button type="button" className="primary-button" onClick={onEnterWorkspace} disabled={authLoading}>
               进入工作台
             </button>
-            <button type="button" className="ghost-button" onClick={onEnterWorkspace} disabled={authLoading}>
-              查看主流程
-            </button>
           </div>
           <CapabilityStrip />
         </div>
@@ -641,37 +881,6 @@ function Homepage({
       </section>
 
       <FeatureStrip />
-
-      <section className="preview-section">
-        <div className="preview-section__heading">
-          <span>项目现有主流程</span>
-          <h2>从商品任务输入，到可继续编辑的内容结果</h2>
-          <p>这里展示的不是效果图，而是项目现在真正要交付给用户的工作面。</p>
-        </div>
-        <WorkspaceCanvas
-          preview={true}
-          authLoading={authLoading}
-          needsLogin={false}
-          authSubmitting={false}
-          authError=""
-          formState={formState}
-          resultState={resultState}
-          selectedTab={selectedTab}
-          workspaceStatus="主流程预览"
-          pageError=""
-          job={null}
-          jobLoading={false}
-          exportLoading={false}
-          exportJob={null}
-          onFieldChange={onFieldChange}
-          onTabChange={onTabChange}
-          onLogin={() => undefined}
-          onSubmit={(event) => event.preventDefault()}
-          onExportMarkdown={() => undefined}
-          onExportStructuredText={() => undefined}
-          onDownloadExport={() => undefined}
-        />
-      </section>
     </main>
   );
 }
@@ -679,7 +888,7 @@ function Homepage({
 function WorkspaceSurface(props: Parameters<typeof WorkspaceCanvas>[0]) {
   return (
     <main className="workspace-page">
-      <WorkspaceCanvas {...props} preview={false} />
+      <WorkspaceCanvas {...props} />
     </main>
   );
 }
@@ -695,14 +904,19 @@ export function StructuredSaasPrototype() {
   const [activeJobId, setActiveJobId] = useState("");
   const [jobLoading, setJobLoading] = useState(false);
   const [resultState, setResultState] = useState<ResultState>("ready");
-  const [selectedTab, setSelectedTab] = useState<ResultTab>("全部");
   const [formState, setFormState] = useState<PrototypeFormState>(DEFAULT_FORM);
   const [pageError, setPageError] = useState("");
   const [exportLoading, setExportLoading] = useState(false);
   const [latestExportJob, setLatestExportJob] = useState<ExportJobRecord | null>(null);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<ProductContentAuditLog[]>([]);
+  const [exportHistory, setExportHistory] = useState<ExportJobRecord[]>([]);
 
+  const authReady = authConfig !== null;
   const requiresPasswordLogin = authConfig?.auth_mode === "password_login";
-  const needsLogin = requiresPasswordLogin && !authUser;
+  const needsLogin = authReady && requiresPasswordLogin && !authUser;
   const workspaceStatus = authLoading
     ? "正在连接服务"
     : needsLogin
@@ -735,12 +949,19 @@ export function StructuredSaasPrototype() {
     try {
       const nextJob = await fetchProductContentJob(jobId);
       setJob(nextJob);
+      setFormState(toPrototypeFormState(nextJob));
       setActiveJobId(String(nextJob.id));
       writeStoredActiveJobId(String(nextJob.id));
       setResultState(isJobActive(nextJob.status) ? "loading" : "ready");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "加载当前结果失败。";
-      setPageError(message);
+      const recoveryAction = getJobLoadFailureViewState(error);
+      if (recoveryAction.clearStoredJob) {
+        writeStoredActiveJobId(null);
+        setActiveJobId("");
+        setJob(null);
+      }
+      setResultState(recoveryAction.nextResultState);
+      setPageError(recoveryAction.message || "");
     } finally {
       if (!options?.silent) {
         setJobLoading(false);
@@ -754,6 +975,7 @@ export function StructuredSaasPrototype() {
     try {
       const config = await fetchAuthConfig();
       setAuthConfig(config);
+      let hasValidatedSession = false;
 
       if (config.auth_mode === "password_login") {
         const storedSession = readStoredAuthSession();
@@ -761,6 +983,7 @@ export function StructuredSaasPrototype() {
           try {
             const currentUser = await fetchCurrentUser();
             setAuthUser(currentUser);
+            hasValidatedSession = true;
           } catch {
             logoutOperator();
             setAuthUser(null);
@@ -769,8 +992,11 @@ export function StructuredSaasPrototype() {
       }
 
       const storedJobId = readStoredActiveJobId();
-      if (storedJobId) {
+      const canRestoreStoredJob = config.auth_mode !== "password_login" || hasValidatedSession;
+      if (storedJobId && canRestoreStoredJob) {
         await loadJob(storedJobId);
+      } else if (storedJobId && config.auth_mode === "password_login") {
+        writeStoredActiveJobId(null);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "连接服务失败。";
@@ -840,6 +1066,10 @@ export function StructuredSaasPrototype() {
     setPageError("");
     setLatestExportJob(null);
     setResultState("loading");
+    setEvidenceOpen(false);
+    setDiagnosticsOpen(false);
+    setAuditLogs([]);
+    setExportHistory([]);
 
     try {
       const payload: ProductInputFormValues = toProductInputFormValues(formState);
@@ -856,7 +1086,8 @@ export function StructuredSaasPrototype() {
   }
 
   async function handleExport(exportType: "markdown" | "structured_text") {
-    if (!activeJobId) {
+    const exportTaskId = job?.id || activeJobId;
+    if (!exportTaskId) {
       return;
     }
 
@@ -865,7 +1096,7 @@ export function StructuredSaasPrototype() {
 
     try {
       const exportJob = await createExportJob({
-        taskId: activeJobId,
+        taskId: exportTaskId,
         exportType,
       });
       setLatestExportJob(exportJob);
@@ -899,39 +1130,60 @@ export function StructuredSaasPrototype() {
     }
   }
 
+  async function handleOpenDiagnostics() {
+    if (!job) {
+      return;
+    }
+
+    setDiagnosticsOpen(true);
+    setDiagnosticsLoading(true);
+    try {
+      const [nextAuditLogs, nextExportJobs] = await Promise.all([
+        fetchProductContentJobAuditLogs(job.id),
+        listExportJobs(job.id),
+      ]);
+      setAuditLogs(nextAuditLogs);
+      setExportHistory(nextExportJobs);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "加载诊断信息失败。";
+      setPageError(message);
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  }
+
   return (
     <div className="prototype-shell">
       <PrototypeHeader authUser={authUser} onHome={() => switchSurface("homepage")} onWorkspace={() => switchSurface("workspace")} />
       {surface === "homepage" ? (
-        <Homepage
-          authLoading={authLoading}
-          formState={formState}
-          resultState={resultState}
-          selectedTab={selectedTab}
-          onEnterWorkspace={() => switchSurface("workspace")}
-          onFieldChange={updateField}
-          onTabChange={setSelectedTab}
-        />
+        <Homepage authLoading={authLoading} onEnterWorkspace={() => switchSurface("workspace")} />
       ) : (
         <WorkspaceSurface
-          preview={false}
+          authReady={authReady}
           authLoading={authLoading}
           needsLogin={needsLogin}
           authSubmitting={authSubmitting}
           authError={authError}
           formState={formState}
           resultState={resultState}
-          selectedTab={selectedTab}
           workspaceStatus={workspaceStatus}
           pageError={pageError}
           job={job}
           jobLoading={jobLoading}
           exportLoading={exportLoading}
           exportJob={toExportSummary(latestExportJob)}
+          evidenceOpen={evidenceOpen}
+          diagnosticsOpen={diagnosticsOpen}
+          diagnosticsLoading={diagnosticsLoading}
+          auditLogs={auditLogs}
+          exportJobs={exportHistory}
           onFieldChange={updateField}
-          onTabChange={setSelectedTab}
           onLogin={handleLogin}
           onSubmit={handleSubmit}
+          onOpenEvidence={() => setEvidenceOpen(true)}
+          onCloseEvidence={() => setEvidenceOpen(false)}
+          onOpenDiagnostics={() => void handleOpenDiagnostics()}
+          onCloseDiagnostics={() => setDiagnosticsOpen(false)}
           onExportMarkdown={() => void handleExport("markdown")}
           onExportStructuredText={() => void handleExport("structured_text")}
           onDownloadExport={() => void handleDownloadExport()}

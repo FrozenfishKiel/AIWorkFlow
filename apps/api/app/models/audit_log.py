@@ -12,6 +12,7 @@ from sqlmodel import DateTime, Field, SQLModel
 class AuditEventType(StrEnum):
     """Task-level events we want to replay later as a readable timeline."""
 
+    PIPELINE_FAILED = "pipeline_failed"
     PIPELINE_COMPLETED = "pipeline_completed"
     SNAPSHOT_PERSISTED = "snapshot_persisted"
     EXPORT_CREATED = "export_created"

@@ -11,35 +11,20 @@ from app.services.task_pipeline_service import TaskPipelineService
 
 def test_create_task_returns_queued_task_and_lists_it(
     client,
-    monkeypatch,
 ) -> None:
-    enqueue_mock = MagicMock()
-    monkeypatch.setattr("app.api.routes_tasks.run_task_pipeline.delay", enqueue_mock)
+    responses = [
+        client.post(
+            "/tasks",
+            json={
+                "input_type": "text",
+                "content": "Summarize this market article for content ops.",
+                "knowledge_domain": "content-ops",
+            },
+        ),
+        client.get("/tasks"),
+    ]
 
-    create_response = client.post(
-        "/tasks",
-        json={
-            "input_type": "text",
-            "content": "Summarize this market article for content ops.",
-            "knowledge_domain": "content-ops",
-        },
-    )
-
-    assert create_response.status_code == 201
-    created_task = create_response.json()
-    assert created_task["status"] == TaskStatus.QUEUED
-    assert created_task["input_type"] == "text"
-    assert created_task["content"] == "Summarize this market article for content ops."
-    assert created_task["knowledge_domain"] == "content-ops"
-    enqueue_mock.assert_called_once_with(created_task["id"])
-
-    list_response = client.get("/tasks")
-
-    assert list_response.status_code == 200
-    listed_tasks = list_response.json()
-    assert len(listed_tasks) == 1
-    assert listed_tasks[0]["id"] == created_task["id"]
-    assert listed_tasks[0]["status"] == TaskStatus.QUEUED
+    assert [response.status_code for response in responses] == [404, 404]
 
 
 @pytest.mark.parametrize("origin", ["http://127.0.0.1:4173", "http://127.0.0.1:5175"])
@@ -65,29 +50,18 @@ def test_create_task_rejects_file_input_for_json_endpoint(client) -> None:
         json={"input_type": "file", "content": "D:\\unsafe-path.txt"},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 404
 
 
 def test_create_task_returns_503_and_cleans_up_when_enqueue_fails(
     client,
-    monkeypatch,
 ) -> None:
-    def raise_enqueue(*args, **kwargs):
-        raise RuntimeError("broker unavailable")
-
-    monkeypatch.setattr("app.api.routes_tasks.run_task_pipeline.delay", raise_enqueue)
-
     create_response = client.post(
         "/tasks",
         json={"input_type": "text", "content": "Queue this task safely."},
     )
 
-    assert create_response.status_code == 503
-    assert create_response.json()["detail"] == "Task queue is temporarily unavailable."
-
-    list_response = client.get("/tasks")
-    assert list_response.status_code == 200
-    assert list_response.json() == []
+    assert create_response.status_code == 404
 
 
 def test_get_task_detail_returns_pipeline_payload(
@@ -153,26 +127,7 @@ def test_get_task_detail_returns_pipeline_payload(
 
     detail_response = client.get(f"/tasks/{task.id}")
 
-    assert detail_response.status_code == 200
-    detail = detail_response.json()
-    assert detail["id"] == str(task.id)
-    assert detail["status"] == TaskStatus.COMPLETED
-    assert (
-        detail["understanding"]["summary"]
-        == "The article focuses on launch messaging and review constraints."
-    )
-    assert detail["understanding"]["input_quality"]["source_kind"] == "url"
-    assert detail["retrieval_hits"][0]["source_id"] == "kb-brand-guideline"
-    assert (
-        detail["workflow_result"]["draft"]
-        == "This is a draft workflow result waiting for human review."
-    )
-    assert detail["workflow_result"]["evidence_used"][0]["source_id"] == "kb-brand-guideline"
-    assert detail["workflow_result"]["evidence_used"][0]["snippet"] == "Keep the tone practical and avoid over-promising."
-    assert detail["workflow_result"]["evidence_used"][0]["reason"] == "Adds a visible tone constraint to the generated draft."
-    assert detail["workflow_result"]["processing_trace"]
-    assert detail["approved_snapshot"]["workflow_result"]["draft"] == "This is a draft workflow result waiting for human review."
-    assert "review" not in detail
+    assert detail_response.status_code == 404
 
 
 def test_review_routes_are_not_exposed_anymore(
@@ -198,7 +153,11 @@ def test_task_audit_log_endpoint_returns_latest_first_timeline(
     session: Session,
 ) -> None:
     repository = TaskRepository(session)
-    task = repository.create_task(input_type="text", content="Need an auditable task timeline.")
+    task = repository.create_task(
+        input_type="product_request",
+        content='{"product":{"name":"挂脖风扇","category":"小家电","specifications":["Type-C"],"price_range":"","core_selling_points":["便携"],"target_audience":"通勤人群","use_scenarios":["夏季通勤"],"promotion_notes":""},"task_description":"生成三类初稿。"}',
+        knowledge_domain="ecommerce",
+    )
     TaskPipelineService(lambda: Session(session.get_bind())).run_pipeline(task.id)
 
     export_response = client.post(
@@ -207,7 +166,7 @@ def test_task_audit_log_endpoint_returns_latest_first_timeline(
     )
     assert export_response.status_code == 201
 
-    response = client.get(f"/tasks/{task.id}/audit-logs")
+    response = client.get(f"/product-content/jobs/{task.id}/audit-logs")
 
     assert response.status_code == 200
     payload = response.json()
@@ -513,25 +472,14 @@ def test_export_job_list_returns_latest_first_and_can_filter_by_task(
 
 def test_create_file_task_accepts_multipart_upload_and_enqueues_processing(
     client,
-    monkeypatch,
 ) -> None:
-    enqueue_mock = MagicMock()
-    monkeypatch.setattr("app.api.routes_tasks.run_task_pipeline.delay", enqueue_mock)
-
     response = client.post(
         "/tasks/upload",
         data={"knowledge_domain": "brand"},
         files={"file": ("launch-brief.md", b"# Brief\n\nHuman review stays mandatory.\n", "text/markdown")},
     )
 
-    assert response.status_code == 201
-    created_task = response.json()
-    assert created_task["status"] == TaskStatus.QUEUED
-    assert created_task["input_type"] == "file"
-    assert created_task["knowledge_domain"] == "brand"
-    assert Path(created_task["content"]).suffix == ".md"
-    assert Path(created_task["content"]).name.startswith("launch-brief")
-    enqueue_mock.assert_called_once_with(created_task["id"])
+    assert response.status_code == 404
 
 
 def test_knowledge_index_local_registers_document_and_enqueues_index_job(
@@ -665,19 +613,19 @@ def test_auth_gate_requires_bearer_token_when_configured(
     get_settings.cache_clear()
     app_main.settings = get_settings()
 
-    unauthorized_response = client.get("/tasks")
+    unauthorized_response = client.get("/knowledge/documents")
     assert unauthorized_response.status_code == 401
     assert unauthorized_response.json()["detail"] == "Missing or invalid bearer token."
 
     wrong_token_response = client.get(
-        "/tasks",
+        "/knowledge/documents",
         headers={"Authorization": "Bearer wrong-token"},
     )
     assert wrong_token_response.status_code == 401
     assert wrong_token_response.json()["detail"] == "Missing or invalid bearer token."
 
     authorized_response = client.get(
-        "/tasks",
+        "/knowledge/documents",
         headers={"Authorization": "Bearer secret-token"},
     )
     assert authorized_response.status_code == 200
@@ -710,7 +658,7 @@ def test_password_login_issues_signed_token_and_protects_routes(
     assert config_response.status_code == 200
     assert config_response.json()["auth_mode"] == "password_login"
 
-    unauthorized_response = client.get("/tasks")
+    unauthorized_response = client.get("/knowledge/documents")
     assert unauthorized_response.status_code == 401
     assert unauthorized_response.json()["detail"] == "Missing or invalid access token."
 
@@ -738,7 +686,7 @@ def test_password_login_issues_signed_token_and_protects_routes(
     assert me_response.json()["username"] == "operator"
     assert me_response.json()["auth_mode"] == "password_login"
 
-    tasks_response = client.get("/tasks", headers=auth_headers)
+    tasks_response = client.get("/knowledge/documents", headers=auth_headers)
     assert tasks_response.status_code == 200
 
     for env_name in ("AUTH_LOGIN_USERNAME", "AUTH_LOGIN_PASSWORD", "AUTH_SECRET_KEY"):

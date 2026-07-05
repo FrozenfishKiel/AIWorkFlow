@@ -6,6 +6,7 @@ export interface ProductContentResultProps {
   isLoading?: boolean;
   exportLoading?: boolean;
   exportJob?: ExportJobSummary | null;
+  onOpenEvidence?: () => void;
   onExportMarkdown?: () => void;
   onExportStructuredText?: () => void;
   onDownloadExport?: () => void;
@@ -16,6 +17,7 @@ export function ProductContentResult({
   isLoading = false,
   exportLoading = false,
   exportJob,
+  onOpenEvidence,
   onExportMarkdown,
   onExportStructuredText,
   onDownloadExport,
@@ -106,20 +108,11 @@ export function ProductContentResult({
           </section>
 
           <section className="support-card">
-            <h3>参考依据</h3>
-            {job.referenceContext.length ? (
-              <div className="stack">
-                {job.referenceContext.map((item) => (
-                  <article className="hit-card" key={item.sourceId}>
-                    <strong>{item.title}</strong>
-                    <p className="muted">{item.reason}</p>
-                    <p>{item.snippet}</p>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="muted">当前没有命中可展示的资料引用。</p>
-            )}
+            <h3>生成依据</h3>
+            <p className="muted">系统理解、参考资料、卖点提炼和风险提示放到单独依据层查看，不和主结果区混在一起。</p>
+            <button type="button" className="button-secondary" onClick={onOpenEvidence}>
+              查看生成依据
+            </button>
           </section>
 
           <section className="support-card">

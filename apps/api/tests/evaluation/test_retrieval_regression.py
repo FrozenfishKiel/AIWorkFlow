@@ -143,3 +143,49 @@ def test_retrieval_regression_handles_basic_approval_language_variants(
 
     assert hits
     assert hits[0]["title"] == "Claims Sign-off Policy"
+
+
+def test_retrieval_regression_matches_chinese_product_copy_guidance(
+    session: Session,
+    tmp_path: Path,
+) -> None:
+    repository = KnowledgeRepository(session)
+
+    platform_file = tmp_path / "xiaohongshu-guide.md"
+    platform_file.write_text(
+        "# 小红书\n\n"
+        "更适合从场景感和真实体验切入，避免一眼广告感太重。\n",
+        encoding="utf-8",
+    )
+    template_file = tmp_path / "template.md"
+    template_file.write_text(
+        "# 模板\n\n"
+        "缺少规格参数或目标人群时，先保守表达，不要擅自补信息。\n",
+        encoding="utf-8",
+    )
+
+    platform_document = repository.create_document(
+        title="小红书种草表达",
+        source_path=str(platform_file),
+        source_type="guide",
+        domain="ecommerce",
+    )
+    template_document = repository.create_document(
+        title="商品资料模板",
+        source_path=str(template_file),
+        source_type="guide",
+        domain="ecommerce",
+    )
+
+    index_service = KnowledgeIndexService(repository)
+    index_service.index_document(platform_document.id)
+    index_service.index_document(template_document.id)
+
+    hits = RetrievalService(repository).retrieve(
+        "想写通勤防晒种草文案，重点突出真实体验和场景感，不要太像广告。",
+        domain="ecommerce",
+        top_k=3,
+    )
+
+    assert hits
+    assert hits[0]["title"] == "小红书种草表达"

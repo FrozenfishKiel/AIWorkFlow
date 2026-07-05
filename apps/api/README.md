@@ -43,10 +43,10 @@
   - 这样本地联调不再强依赖 Docker 和独立 Worker
 - 生成 provider 当前支持：
   - `deepseek`
-  - `deterministic`
   - `auto`
-- 当环境里存在 `DEEPSEEK_API_KEY` 时，会优先走 DeepSeek
-- 当模型配置不存在或测试环境显式指定 deterministic 时，会自动回退到确定性 provider
+- 当前本地默认建议使用 `auto`
+- 当环境里存在 `DEEPSEEK_API_KEY` 时，`auto` 会优先走 DeepSeek 真链
+- 当前正式链路不再保留 deterministic 保底生成分支；如果 DeepSeek 配置缺失或响应异常，任务应直接失败并暴露错误
 - 默认会自动补入最小电商资料包，保证主链可直接演示
 - 导出当前支持：
   - `markdown`
@@ -82,7 +82,7 @@ D:\Anaconda3\envs\ai-content-ops\python.exe
 - `DEEPSEEK_MODEL`
 - `DEEPSEEK_TIMEOUT_SECONDS`
 
-当前测试默认使用 deterministic provider，避免依赖外部 API。
+当前自动化测试通过测试夹具里的 fake provider 隔离外部 API；日常本地联调与正式演示默认都应保持真实 DeepSeek 链路。
 
 ## 鉴权相关环境变量
 

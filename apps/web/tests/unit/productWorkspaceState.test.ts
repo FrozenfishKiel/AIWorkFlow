@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "../../src/services/api";
-import { getStoredJobRecoveryAction } from "../../src/pages/productWorkspaceState";
+import {
+  getJobLoadFailureViewState,
+  getStoredJobRecoveryAction,
+} from "../../src/pages/productWorkspaceState";
 
 describe("product workspace stored job recovery", () => {
   it("silently clears a stale stored job id when the backend returns 404", () => {
@@ -29,6 +32,14 @@ describe("product workspace stored job recovery", () => {
     expect(getStoredJobRecoveryAction(new Error("Network down"))).toEqual({
       clearStoredJob: false,
       message: "Network down",
+    });
+  });
+
+  it("forces the workspace result state back to ready when job detail loading fails", () => {
+    expect(getJobLoadFailureViewState(new ApiError("Server error", 500))).toEqual({
+      clearStoredJob: false,
+      message: "Server error",
+      nextResultState: "ready",
     });
   });
 });

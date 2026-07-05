@@ -51,6 +51,7 @@ describe("ProductContentResult", () => {
     const onExportMarkdown = vi.fn();
     const onExportStructuredText = vi.fn();
     const onDownloadExport = vi.fn();
+    const onOpenEvidence = vi.fn();
 
     const tree = ProductContentResult({
       job: {
@@ -75,6 +76,13 @@ describe("ProductContentResult", () => {
           useScenarios: ["夏季通勤", "户外补涂"],
           primaryValuePoints: ["清爽不搓泥", "补涂方便"],
         },
+        sellingStrategy: {
+          primaryAngle: "清爽不搓泥",
+          supportingAngles: ["补涂方便", "高倍防护"],
+          scenarioFocus: ["夏季通勤", "户外补涂"],
+          expressionGuardrails: ["避免绝对化表达", "优先强调真实肤感"],
+        },
+        inputAlerts: [],
         referenceContext: [
           {
             sourceId: "brand-tone-guide",
@@ -99,6 +107,7 @@ describe("ProductContentResult", () => {
         exportType: "markdown",
         filePath: ".runtime/exports/export-1.md",
       },
+      onOpenEvidence,
       onExportMarkdown,
       onExportStructuredText,
       onDownloadExport,
@@ -109,14 +118,17 @@ describe("ProductContentResult", () => {
     expect(text).toContain("电商卖点文案");
     expect(text).toContain("商品详情页文案");
     expect(text).toContain("小红书 / 种草短文案");
-    expect(text).toContain("参考依据");
+    expect(text).toContain("生成依据");
     expect(text).toContain("风险提醒");
     expect(text).toContain("清爽不搓泥，补涂更轻松。");
+    expect(text).not.toContain("品牌语气规范");
 
+    findButtonByText(tree, "查看生成依据")?.onClick?.();
     findButtonByText(tree, "导出 Markdown")?.onClick?.();
     findButtonByText(tree, "导出结构化文本")?.onClick?.();
     findButtonByText(tree, "下载导出文件")?.onClick?.();
 
+    expect(onOpenEvidence).toHaveBeenCalledTimes(1);
     expect(onExportMarkdown).toHaveBeenCalledTimes(1);
     expect(onExportStructuredText).toHaveBeenCalledTimes(1);
     expect(onDownloadExport).toHaveBeenCalledTimes(1);
@@ -141,6 +153,8 @@ describe("ProductContentResult", () => {
         },
         taskDescription: "生成三类初稿。",
         productBrief: null,
+        sellingStrategy: null,
+        inputAlerts: [],
         referenceContext: [],
         generatedContent: null,
         createdAt: "2026-07-03T00:00:00Z",

@@ -36,6 +36,35 @@ class ReferenceContextRead(BaseModel):
     title: str
     snippet: str
     reason: str
+    rank: int | None = None
+    score: float | None = None
+    selected: bool = False
+    matched_terms: list[str] = Field(default_factory=list)
+    matched_phrases: list[str] = Field(default_factory=list)
+    visible_text: str = ""
+
+
+class ProductContentDiagnosticsRead(BaseModel):
+    generation_provider: str = ""
+    retrieval_provider: str = ""
+    retrieval_query: str = ""
+    retrieval_top_k_requested: int = 0
+    retrieval_top_k_effective: int = 0
+    candidate_hit_count: int = 0
+    selected_hit_count: int = 0
+    selected_source_ids: list[str] = Field(default_factory=list)
+    selected_titles: list[str] = Field(default_factory=list)
+    weak_retrieval: bool = False
+    duplicate_hits_removed: int = 0
+    failure_stage: str | None = None
+    failure_reason: str | None = None
+
+
+class SellingStrategyRead(BaseModel):
+    primary_angle: str = ""
+    supporting_angles: list[str] = Field(default_factory=list)
+    scenario_focus: list[str] = Field(default_factory=list)
+    expression_guardrails: list[str] = Field(default_factory=list)
 
 
 class GeneratedContentRead(BaseModel):
@@ -54,7 +83,13 @@ class ProductContentJobRead(BaseModel):
     product: ProductInput
     task_description: str
     product_brief: ProductBriefRead | None = None
+    selling_strategy: SellingStrategyRead | None = None
+    input_alerts: list[str] = Field(default_factory=list)
     reference_context: list[ReferenceContextRead] = Field(default_factory=list)
+    retrieval_candidates: list[ReferenceContextRead] = Field(default_factory=list)
+    context_summary: dict[str, object] = Field(default_factory=dict)
+    diagnostics: ProductContentDiagnosticsRead | None = None
+    processing_trace: list[str] = Field(default_factory=list)
     generated_content: GeneratedContentRead | None = None
     created_at: datetime
     updated_at: datetime

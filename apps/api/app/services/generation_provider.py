@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Protocol
 
 import httpx
 from pydantic import BaseModel, Field
 
 from app.core.settings import Settings, get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class ModelUnderstandingPayload(BaseModel):
@@ -28,6 +31,25 @@ class ModelWorkflowPayload(BaseModel):
     manual_checks: list[str] = Field(default_factory=list)
 
 
+class ProductUnderstandingPayload(BaseModel):
+    """Structured understanding contract for the product-content main chain."""
+
+    summary: str = Field(min_length=1)
+    target_audience: str = Field(min_length=1)
+    use_scenarios: list[str] = Field(default_factory=list)
+    primary_value_points: list[str] = Field(default_factory=list)
+
+
+class ProductWorkflowPayload(BaseModel):
+    """Structured output contract for the product-content main chain."""
+
+    selling_points_copy: list[str] = Field(default_factory=list)
+    detail_page_copy: str = ""
+    social_seed_copy: str = ""
+    risk_notes: list[str] = Field(default_factory=list)
+    applied_guidelines: list[str] = Field(default_factory=list)
+
+
 class TaskGenerationProvider(Protocol):
     """Stable interface used by the task pipeline regardless of model vendor."""
 
@@ -45,105 +67,6 @@ class TaskGenerationProvider(Protocol):
         generation_context: dict[str, Any],
     ) -> dict[str, Any]:
         """Return the structured workflow core before traceability enrichment."""
-
-
-class DeterministicTaskGenerationProvider:
-    """Local fallback provider that preserves the old placeholder behavior."""
-
-    provider_name = "deterministic-fallback"
-
-    def build_understanding(self, parsed_input: dict[str, Any]) -> dict[str, Any]:
-        if parsed_input["source_kind"] == "product_request":
-            product_payload = parsed_input["product_payload"]
-            name = str(product_payload.get("name") or "商品")
-            target_audience = str(product_payload.get("target_audience") or "目标用户")
-            scenarios = [str(item) for item in product_payload.get("use_scenarios", [])]
-            selling_points = [str(item) for item in product_payload.get("core_selling_points", [])]
-            return {
-                "summary": (
-                    f"{name} 面向 {target_audience}，本次应重点突出 "
-                    f"{'、'.join(selling_points[:3]) or '核心卖点'}。"
-                ),
-                "target_audience": target_audience,
-                "use_scenarios": scenarios,
-                "primary_value_points": selling_points[:3],
-            }
-
-        parsed_text = str(parsed_input["parsed_text"])
-        snippet = parsed_text[:80].strip() or "No content provided."
-        payload = ModelUnderstandingPayload(
-            summary=f"Structured summary for: {snippet}",
-            audience=["content-ops", "brand"],
-            key_points=[
-                "The task requires structured understanding before generation.",
-                "References should remain visible in the persisted record.",
-                "Results should remain exportable without synchronous approval.",
-            ],
-            risk_points=["Claims still require post-run verification against cited evidence."],
-            uncertain_items=["Final business angle may still need operator confirmation."],
-        )
-        return payload.model_dump()
-
-    def build_workflow(
-        self,
-        *,
-        parsed_input: dict[str, Any],
-        understanding: dict[str, Any],
-        retrieval_hits: list[dict[str, Any]],
-        generation_context: dict[str, Any],
-    ) -> dict[str, Any]:
-        if parsed_input["source_kind"] == "product_request":
-            product_payload = parsed_input["product_payload"]
-            name = str(product_payload.get("name") or "商品")
-            selling_points = [str(item) for item in product_payload.get("core_selling_points", [])]
-            guideline_titles = [str(hit["title"]) for hit in retrieval_hits]
-            first_line = (
-                f"{name}{selling_points[0]}，更适合{understanding.get('target_audience') or '目标用户'}日常使用。"
-                if selling_points
-                else f"{name}围绕真实使用场景整理了更清晰的卖点表达。"
-            )
-            return {
-                "selling_points_copy": [
-                    first_line,
-                    f"围绕{'、'.join(understanding.get('use_scenarios', [])[:2]) or '日常场景'}组织信息，更方便运营继续改写。"
-                ],
-                "detail_page_copy": (
-                    f"{name}这次主打{'、'.join(understanding.get('primary_value_points', [])[:3]) or '核心卖点'}，"
-                    f"适合{'、'.join(understanding.get('use_scenarios', [])[:2]) or '日常使用'}场景，"
-                    "详情页建议先讲核心体验，再补充规格与活动信息。"
-                ),
-                "social_seed_copy": (
-                    f"{name}这版种草文案先强调真实体验和使用场景，"
-                    f"更适合面向{understanding.get('target_audience') or '目标用户'}继续打磨。"
-                ),
-                "risk_notes": ["避免使用绝对化功效承诺，保持真实体验表达。"],
-                "applied_guidelines": guideline_titles,
-            }
-
-        source_ids = ", ".join(hit["source_id"] for hit in retrieval_hits)
-        payload = ModelWorkflowPayload(
-            draft=(
-                "Draft workflow result based on the structured understanding and visible retrieval hits. "
-                f"Primary audience: {', '.join(understanding['audience'])}."
-            ),
-            review_notes=[
-                "Confirm the final business angle before external use.",
-                (
-                    f"Verify the cited sources: {source_ids}."
-                    if retrieval_hits
-                    else "No indexed knowledge hits were available for this task yet."
-                ),
-            ],
-            open_questions=[
-                "Does the generated angle match the brand constraint?",
-                "Are any claims missing manual confirmation?",
-            ],
-            manual_checks=[
-                "Confirm the final business angle before external use.",
-                "Verify every externally visible claim against the cited evidence.",
-            ],
-        )
-        return payload.model_dump()
 
 
 class DeepSeekTaskGenerationProvider:
@@ -173,10 +96,14 @@ class DeepSeekTaskGenerationProvider:
         if parsed_input["source_kind"] == "product_request":
             response_payload = self._request_json_completion(
                 system_prompt=(
-                    "You are an ecommerce product content strategist. "
+                    "You are an ecommerce product analysis engine. "
                     "Return valid JSON only. Do not wrap the response in markdown. "
                     "Use the exact JSON keys: summary, target_audience, use_scenarios, primary_value_points. "
-                    "use_scenarios and primary_value_points must be arrays of strings."
+                    "use_scenarios and primary_value_points must be arrays of strings. "
+                    "Write all values in Simplified Chinese. "
+                    "Ground every field only in the provided product facts and task description. "
+                    "Do not invent missing specifications, categories, audiences, scenarios, promotions, ingredients, materials, or claims. "
+                    "If information is weak, keep the wording conservative and only restate what is actually present."
                 ),
                 user_payload={
                     "task": "build_product_brief",
@@ -189,10 +116,13 @@ class DeepSeekTaskGenerationProvider:
                 fields=("use_scenarios", "primary_value_points"),
             )
             normalized_payload["summary"] = self._coerce_text_block(normalized_payload.get("summary"))
-            normalized_payload["target_audience"] = self._coerce_text_block(
-                normalized_payload.get("target_audience")
+            normalized_target_audience = self._coerce_text_block(normalized_payload.get("target_audience"))
+            normalized_payload["target_audience"] = (
+                normalized_target_audience
+                or str(parsed_input["product_payload"].get("target_audience") or "").strip()
+                or "未明确目标人群"
             )
-            return normalized_payload
+            return ProductUnderstandingPayload.model_validate(normalized_payload).model_dump()
 
         response_payload = self._request_json_completion(
             system_prompt=(
@@ -229,7 +159,19 @@ class DeepSeekTaskGenerationProvider:
                     "Return valid JSON only. Do not wrap the response in markdown. "
                     "Use the exact JSON keys: selling_points_copy, detail_page_copy, social_seed_copy, risk_notes, applied_guidelines. "
                     "selling_points_copy, risk_notes, and applied_guidelines must be arrays of strings. "
-                    "detail_page_copy and social_seed_copy must be plain strings."
+                    "detail_page_copy and social_seed_copy must be plain strings. "
+                    "Write all copy in Simplified Chinese. "
+                    "Use product facts as the only source of factual claims. "
+                    "Do not invent product facts, specifications, ingredients, materials, prices, audiences, scenes, promotions, or benefits that are not in the input. "
+                    "Never use placeholder facts or guessed specifics such as 'XX克', '某成分', '某材质', '待补充', or similar stand-ins. "
+                    "If an exact number or attribute is missing, omit that sentence instead of guessing. "
+                    "Retrieval hits are constraints and writing guidance, not substitutes for missing product facts. "
+                    "At least two selling points must directly reuse or clearly restate the provided core_selling_points. "
+                    "Prefer core_selling_points and use_scenarios over generic specifications or price. "
+                    "The detail_page_copy must mention the product name and must cover at least two concrete product facts from core_selling_points, target_audience, or use_scenarios. "
+                    "The social_seed_copy must mention at least one use_scenario and one core_selling_point, and must not focus mainly on price or generic value-for-money language unless the task explicitly asks for that. "
+                    "If retrieval_quality.weak_retrieval is true or the product info is incomplete, keep the copy conservative and say less rather than hallucinating. "
+                    "Do not switch to English unless the input product itself requires it."
                 ),
                 user_payload={
                     "task": "build_product_content",
@@ -250,7 +192,7 @@ class DeepSeekTaskGenerationProvider:
             normalized_payload["social_seed_copy"] = self._coerce_text_block(
                 normalized_payload.get("social_seed_copy")
             )
-            return normalized_payload
+            return ProductWorkflowPayload.model_validate(normalized_payload).model_dump()
 
         response_payload = self._request_json_completion(
             system_prompt=(
@@ -308,7 +250,7 @@ class DeepSeekTaskGenerationProvider:
         content = self._extract_message_content(payload)
         if not content.strip():
             raise ValueError("DeepSeek returned empty content for structured generation.")
-        return json.loads(content)
+        return self._load_structured_json(content, schema_prompt=system_prompt)
 
     def _extract_message_content(self, payload: dict[str, Any]) -> str:
         choices = payload.get("choices") or []
@@ -375,6 +317,119 @@ class DeepSeekTaskGenerationProvider:
             return "\n".join(parts)
         return str(value).strip()
 
+    def _load_structured_json(
+        self,
+        content: str,
+        *,
+        schema_prompt: str,
+    ) -> dict[str, Any]:
+        last_error: json.JSONDecodeError | None = None
+        for candidate in self._iter_json_candidates(content):
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+
+        repaired_content = self._repair_structured_content(
+            schema_prompt=schema_prompt,
+            malformed_content=content,
+        )
+        for candidate in self._iter_json_candidates(repaired_content):
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+
+        if last_error is not None:
+            raise last_error
+        raise ValueError("DeepSeek returned empty structured content after repair.")
+
+    def _repair_structured_content(
+        self,
+        *,
+        schema_prompt: str,
+        malformed_content: str,
+    ) -> str:
+        response = self.client.post(
+            "/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": self.model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You repair malformed JSON produced by another model. "
+                            "Return valid JSON only. Do not add markdown, explanation, or extra keys. "
+                            "Preserve the original language and follow the provided schema instructions exactly."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "schema_instructions": schema_prompt,
+                                "malformed_content": self._truncate_text(malformed_content, 12000),
+                            },
+                            ensure_ascii=False,
+                        ),
+                    },
+                ],
+                "temperature": 0,
+                "response_format": {"type": "json_object"},
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return self._extract_message_content(payload)
+
+    def _iter_json_candidates(self, content: str) -> list[str]:
+        stripped = content.strip()
+        if not stripped:
+            return []
+
+        candidates: list[str] = [stripped]
+        fenced = self._strip_markdown_fence(stripped)
+        if fenced and fenced not in candidates:
+            candidates.append(fenced)
+
+        for candidate in list(candidates):
+            extracted = self._extract_json_object(candidate)
+            if extracted and extracted not in candidates:
+                candidates.append(extracted)
+
+        return candidates
+
+    def _strip_markdown_fence(self, content: str) -> str:
+        stripped = content.strip()
+        if not stripped.startswith("```"):
+            return stripped
+        lines = stripped.splitlines()
+        if len(lines) >= 3 and lines[-1].strip() == "```":
+            return "\n".join(lines[1:-1]).strip()
+        return stripped
+
+    def _extract_json_object(self, content: str) -> str | None:
+        start = content.find("{")
+        end = content.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        return content[start : end + 1].strip()
+
+    def _dedupe_strings(self, values: list[str]) -> list[str]:
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            cleaned = str(value).strip()
+            if not cleaned or cleaned in seen:
+                continue
+            seen.add(cleaned)
+            deduped.append(cleaned)
+        return deduped
+
 
 def build_task_generation_provider(
     settings: Settings | None = None,
@@ -385,18 +440,17 @@ def build_task_generation_provider(
 
     resolved_settings = settings or get_settings()
     mode = resolved_settings.task_generation_provider.lower().strip()
-
-    if mode == "deepseek" or (mode == "auto" and resolved_settings.deepseek_api_key):
-        if not resolved_settings.deepseek_api_key:
-            raise ValueError(
-                "TASK_GENERATION_PROVIDER is set to 'deepseek' but no DEEPSEEK_API_KEY is configured."
-            )
-        return DeepSeekTaskGenerationProvider(
-            api_key=resolved_settings.deepseek_api_key,
-            model=resolved_settings.deepseek_model,
-            base_url=resolved_settings.deepseek_api_base_url,
-            timeout_seconds=resolved_settings.deepseek_timeout_seconds,
-            client=client,
+    if mode not in {"auto", "deepseek"}:
+        raise ValueError(
+            f"Unsupported TASK_GENERATION_PROVIDER: {resolved_settings.task_generation_provider}. "
+            "Only 'deepseek' is supported in the formal chain."
         )
-
-    return DeterministicTaskGenerationProvider()
+    if not resolved_settings.deepseek_api_key:
+        raise ValueError("DEEPSEEK_API_KEY is required because the formal chain no longer supports deterministic fallback.")
+    return DeepSeekTaskGenerationProvider(
+        api_key=resolved_settings.deepseek_api_key,
+        model=resolved_settings.deepseek_model,
+        base_url=resolved_settings.deepseek_api_base_url,
+        timeout_seconds=resolved_settings.deepseek_timeout_seconds,
+        client=client,
+    )

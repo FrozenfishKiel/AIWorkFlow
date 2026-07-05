@@ -29,6 +29,42 @@ DEFAULT_ECOMMERCE_DOCUMENTS = (
         "source_type": "high_performing_examples",
         "domain": "ecommerce",
     },
+    {
+        "title": "商品资料模板",
+        "filename": "商品资料模板.md",
+        "source_type": "product_template",
+        "domain": "ecommerce",
+    },
+    {
+        "title": "黑咖啡浓缩液事实卡",
+        "filename": "黑咖啡浓缩液-事实卡.md",
+        "source_type": "product_fact_card",
+        "domain": "ecommerce",
+    },
+    {
+        "title": "便携挂脖小风扇事实卡",
+        "filename": "便携挂脖小风扇-事实卡.md",
+        "source_type": "product_fact_card",
+        "domain": "ecommerce",
+    },
+    {
+        "title": "洁面个护清洁事实卡",
+        "filename": "洁面个护清洁-事实卡.md",
+        "source_type": "category_fact_card",
+        "domain": "ecommerce",
+    },
+    {
+        "title": "轻食零食事实卡",
+        "filename": "轻食零食-事实卡.md",
+        "source_type": "category_fact_card",
+        "domain": "ecommerce",
+    },
+    {
+        "title": "宠物清洁事实卡",
+        "filename": "宠物清洁-事实卡.md",
+        "source_type": "category_fact_card",
+        "domain": "ecommerce",
+    },
 )
 
 
@@ -53,5 +89,37 @@ def ensure_default_ecommerce_knowledge(session: Session) -> None:
                 domain=document_spec["domain"],
             )
 
-        if document.status != KnowledgeDocumentStatus.INDEXED or document.chunk_count <= 0:
+        if _default_document_needs_reindex(
+            repository=repository,
+            index_service=index_service,
+            document=document,
+            source_path=source_path,
+        ):
             index_service.index_document(document.id)
+
+
+def _default_document_needs_reindex(
+    *,
+    repository: KnowledgeRepository,
+    index_service: KnowledgeIndexService,
+    document,
+    source_path: Path,
+) -> bool:
+    if document.status != KnowledgeDocumentStatus.INDEXED or document.chunk_count <= 0:
+        return True
+
+    expected_chunk_texts = index_service.build_chunk_texts_from_path(source_path)
+    actual_chunks = repository.list_chunks_for_document(document.id)
+
+    if document.chunk_count != len(expected_chunk_texts) or len(actual_chunks) != len(expected_chunk_texts):
+        return True
+
+    for actual_chunk, expected_chunk_text in zip(actual_chunks, expected_chunk_texts, strict=False):
+        if actual_chunk.content != expected_chunk_text:
+            return True
+        if not actual_chunk.retrieval_text.strip():
+            return True
+        if not actual_chunk.embedding_vector:
+            return True
+
+    return False

@@ -1,0 +1,68 @@
+[
+  {
+    "case_id": "sparse-cleanser-input",
+    "payload": {
+      "product": {
+        "name": "洁面乳",
+        "category": "个护清洁",
+        "specifications": [
+          "150g"
+        ],
+        "price_range": "",
+        "core_selling_points": [
+          "温和清洁"
+        ],
+        "target_audience": "",
+        "use_scenarios": [],
+        "promotion_notes": ""
+      },
+      "task_description": "生成三类商品内容初稿。"
+    },
+    "expected": {
+      "selected_hit_count": 0,
+      "weak_retrieval": true,
+      "input_alert_contains": [
+        "核心卖点信息偏少",
+        "目标人群信息较弱",
+        "使用场景信息较弱"
+      ],
+      "risk_note_contains": [
+        "输入信息仍有缺口",
+        "当前没有命中足够具体的商品或类目事实资料"
+      ]
+    }
+  },
+  {
+    "case_id": "underspecified-coffee-request",
+    "payload": {
+      "product": {
+        "name": "黑咖啡浓缩液",
+        "category": "冲调饮品",
+        "specifications": [
+          "12条"
+        ],
+        "price_range": "",
+        "core_selling_points": [
+          "便携"
+        ],
+        "target_audience": "",
+        "use_scenarios": [],
+        "promotion_notes": ""
+      },
+      "task_description": "生成种草和详情页初稿。"
+    },
+    "expected": {
+      "selected_hit_count": 0,
+      "weak_retrieval": true,
+      "input_alert_contains": [
+        "规格参数还可以补充更细",
+        "核心卖点信息偏少",
+        "目标人群信息较弱"
+      ],
+      "risk_note_contains": [
+        "输入信息仍有缺口",
+        "当前没有命中足够具体的商品或类目事实资料"
+      ]
+    }
+  }
+]

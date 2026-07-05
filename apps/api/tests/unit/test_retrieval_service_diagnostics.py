@@ -63,7 +63,7 @@ def test_retrieval_diagnostics_baseline_title_signal_is_now_stable(
 
     assert hits, "Expected at least one retrieval hit for the baseline diagnostic case."
     assert hits[0]["title"] == "Launch Review Checklist"
-    assert "title signals" in hits[0]["reason"].lower()
+    assert "launch review checklist" in hits[0]["reason"].lower()
 
 
 def test_retrieval_diagnostics_baseline_domain_filter_is_stable(
@@ -105,14 +105,7 @@ def test_retrieval_diagnostics_baseline_domain_filter_is_stable(
     assert {hit["title"] for hit in hits} == {"Compliance Checklist"}
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Known limit: current retrieval is still lexical-only and cannot reliably bridge "
-        "semantic synonyms such as 'approval' versus 'sign-off'."
-    ),
-    strict=True,
-)
-def test_retrieval_diagnostics_known_limit_semantic_synonyms(
+def test_retrieval_diagnostics_semantic_synonyms_are_now_stable(
     session: Session,
     tmp_path: Path,
 ) -> None:
@@ -147,6 +140,7 @@ def test_retrieval_diagnostics_known_limit_semantic_synonyms(
 
     assert hits, "Expected at least one hit in the synonym diagnostic case."
     assert hits[0]["title"] == "Claims Sign-off Policy"
+    assert "approval" in hits[0]["reason"].lower() or "public" in hits[0]["reason"].lower()
 
 
 def test_retrieval_diagnostics_word_variant_normalization_is_now_stable(
@@ -184,3 +178,44 @@ def test_retrieval_diagnostics_word_variant_normalization_is_now_stable(
 
     assert hits, "Expected at least one hit in the word-variant diagnostic case."
     assert hits[0]["title"] == "Approvals Guardrails"
+
+
+def test_retrieval_diagnostics_chinese_ecommerce_query_is_explainable(
+    session: Session,
+    tmp_path: Path,
+) -> None:
+    repository = KnowledgeRepository(session)
+
+    _index_document(
+        repository,
+        tmp_path=tmp_path,
+        file_name="xiaohongshu-guide.md",
+        title="小红书种草表达",
+        content=(
+            "# 小红书\n\n"
+            "更适合从真实体验和场景感切入，避免直接堆硬广卖点。\n"
+        ),
+        domain="ecommerce",
+    )
+    _index_document(
+        repository,
+        tmp_path=tmp_path,
+        file_name="brand-guide.md",
+        title="品牌语气规范",
+        content=(
+            "# 品牌\n\n"
+            "避免绝对化承诺，优先自然可靠的表达。\n"
+        ),
+        domain="ecommerce",
+    )
+
+    hits = RetrievalService(repository).retrieve(
+        "想写夏季通勤补涂防晒的种草文案，重点是真实使用感，不要太广告。",
+        domain="ecommerce",
+        top_k=3,
+    )
+
+    assert hits, "Expected Chinese ecommerce retrieval to return explainable evidence."
+    assert hits[0]["title"] == "小红书种草表达"
+    assert "真实体验" in hits[0]["reason"]
+    assert "score" not in hits[0]["reason"].lower()

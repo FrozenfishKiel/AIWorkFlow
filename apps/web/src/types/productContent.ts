@@ -38,11 +38,51 @@ export interface ProductBrief {
   primaryValuePoints: string[];
 }
 
+export interface SellingStrategy {
+  primaryAngle: string;
+  supportingAngles: string[];
+  scenarioFocus: string[];
+  expressionGuardrails: string[];
+}
+
 export interface ReferenceContextItem {
   sourceId: string;
   title: string;
   snippet: string;
   reason: string;
+  rank?: number | null;
+  score?: number | null;
+  selected?: boolean;
+  matchedTerms?: string[];
+  matchedPhrases?: string[];
+  visibleText?: string;
+}
+
+export interface ProductContentDiagnostics {
+  generationProvider: string;
+  retrievalProvider: string;
+  retrievalQuery: string;
+  retrievalTopKRequested: number;
+  retrievalTopKEffective: number;
+  candidateHitCount: number;
+  selectedHitCount: number;
+  selectedSourceIds: string[];
+  selectedTitles: string[];
+  weakRetrieval: boolean;
+  duplicateHitsRemoved: number;
+  failureStage: string | null;
+  failureReason: string | null;
+}
+
+export interface ProductContentAuditLog {
+  id: string;
+  taskId: string;
+  exportJobId: string | null;
+  eventType: string;
+  outcome: "success" | "failure";
+  summary: string;
+  details: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface GeneratedContent {
@@ -61,7 +101,13 @@ export interface ProductContentJobDetail {
   product: ProductInput;
   taskDescription: string;
   productBrief: ProductBrief | null;
+  sellingStrategy: SellingStrategy | null;
+  inputAlerts: string[];
   referenceContext: ReferenceContextItem[];
+  retrievalCandidates: ReferenceContextItem[];
+  contextSummary: Record<string, unknown>;
+  diagnostics?: ProductContentDiagnostics | null;
+  processingTrace: string[];
   generatedContent: GeneratedContent | null;
   createdAt: string;
   updatedAt: string;
@@ -89,12 +135,48 @@ export interface ApiProductContentJobRecord {
     use_scenarios: string[];
     primary_value_points: string[];
   } | null;
+  selling_strategy?: {
+    primary_angle: string;
+    supporting_angles: string[];
+    scenario_focus: string[];
+    expression_guardrails: string[];
+  } | null;
+  input_alerts?: string[];
   reference_context: Array<{
     source_id: string;
     title: string;
     snippet: string;
     reason: string;
   }>;
+  retrieval_candidates?: Array<{
+    source_id: string;
+    title: string;
+    snippet: string;
+    reason: string;
+    rank?: number | null;
+    score?: number | null;
+    selected?: boolean;
+    matched_terms?: string[];
+    matched_phrases?: string[];
+    visible_text?: string;
+  }>;
+  context_summary?: Record<string, unknown>;
+  diagnostics?: {
+    generation_provider?: string;
+    retrieval_provider?: string;
+    retrieval_query?: string;
+    retrieval_top_k_requested?: number;
+    retrieval_top_k_effective?: number;
+    candidate_hit_count?: number;
+    selected_hit_count?: number;
+    selected_source_ids?: string[];
+    selected_titles?: string[];
+    weak_retrieval?: boolean;
+    duplicate_hits_removed?: number;
+    failure_stage?: string | null;
+    failure_reason?: string | null;
+  } | null;
+  processing_trace?: string[];
   generated_content?: {
     selling_points_copy: string[];
     detail_page_copy: string;
@@ -115,7 +197,8 @@ export interface ExportJobSummary {
 
 export function splitLines(value: string): string[] {
   return value
-    .split(/\r?\n/)
+    .replace(/[；;、，,]+/g, "\n")
+    .split(/\r?\n|\s+/)
     .map((item) => item.trim())
     .filter(Boolean);
 }

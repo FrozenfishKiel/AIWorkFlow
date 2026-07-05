@@ -41,6 +41,8 @@ build/
 
 # Runtime and logs
 .runtime/
+.runtime-formal-test/
+.runtime-real-chain/
 runtime/
 *.log
 logs/

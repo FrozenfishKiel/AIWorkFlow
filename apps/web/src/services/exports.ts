@@ -12,6 +12,10 @@ export async function fetchExportJob(exportJobId: string): Promise<ExportJobReco
   return await apiClient.get<ExportJobRecord>(`/exports/${exportJobId}`);
 }
 
+export async function listExportJobs(taskId: string): Promise<ExportJobRecord[]> {
+  return await apiClient.get<ExportJobRecord[]>(`/exports?task_id=${encodeURIComponent(taskId)}`);
+}
+
 export async function downloadExportArtifact(exportJobId: string): Promise<Blob> {
   return await apiClient.getBlob(`/exports/${exportJobId}/artifact`);
 }

@@ -16,7 +16,7 @@ from app.schemas.knowledge import (
 )
 from app.tasks.knowledge_indexer import index_knowledge_document
 
-router = APIRouter(prefix="/knowledge", tags=["knowledge"])
+router = APIRouter(prefix="/knowledge", tags=["knowledge"], include_in_schema=False)
 
 
 @router.get("/documents", response_model=list[KnowledgeDocumentRead])

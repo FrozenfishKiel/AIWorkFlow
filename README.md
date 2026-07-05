@@ -38,7 +38,8 @@
 - `FastAPI + SQLModel + Celery + Redis` 后端异步执行链
 - 本地 SQLite 环境下，若 Redis / Celery 不可用，商品生成与导出会自动回退为进程内同步执行
 - `POST /product-content/jobs` 与 `GET /product-content/jobs/{task_id}` 商品内容生成接口
-- DeepSeek / deterministic 双 provider 生成分支
+- DeepSeek 真链生成分支
+- 本地与正式演示统一要求真实模型链路；`TASK_GENERATION_PROVIDER` / `RETRIEVAL_PROFILE_PROVIDER` 当前只支持 `deepseek` 口径，`auto` 仅表示按本机已配置的 DeepSeek 参数自动接通
 - 固定电商知识资料自动种子写入
 - 结果导出能力
 - 最小登录边界：
@@ -48,7 +49,12 @@
   - 商品信息输入
   - 自动轮询当前结果
   - 三类初稿展示
-  - 风险提醒与参考依据展示
+  - 生成依据抽屉：
+    - 系统理解
+    - 参考资料
+    - 卖点提炼
+    - 风险提示
+  - 弱输入提醒与结果风险提示
   - 当前结果导出
 - API / Web 自动化校验脚本
 

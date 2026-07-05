@@ -37,10 +37,10 @@ describe("api client auth header", () => {
       json: async () => ({ ok: true }),
     });
 
-    await apiClient.get("/tasks");
+    await apiClient.get("/product-content/jobs/example-id");
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8000/tasks",
+      "http://localhost:8000/product-content/jobs/example-id",
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: "Bearer front-secret",
@@ -61,10 +61,10 @@ describe("api client auth header", () => {
       json: async () => ({ ok: true }),
     });
 
-    await apiClient.get("/tasks");
+    await apiClient.get("/product-content/jobs/example-id");
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8000/tasks",
+      "http://localhost:8000/product-content/jobs/example-id",
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: "Bearer session-secret",

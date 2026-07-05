@@ -1,10 +1,37 @@
 import { apiClient } from "./api";
 import type {
   ApiProductContentJobRecord,
+  ProductContentAuditLog,
   ProductContentJobDetail,
   ProductInputFormValues,
 } from "../types/productContent";
 import { splitLines } from "../types/productContent";
+
+function normalizeReferenceItem(item: {
+  source_id: string;
+  title: string;
+  snippet: string;
+  reason: string;
+  rank?: number | null;
+  score?: number | null;
+  selected?: boolean;
+  matched_terms?: string[];
+  matched_phrases?: string[];
+  visible_text?: string;
+}) {
+  return {
+    sourceId: item.source_id,
+    title: item.title,
+    snippet: item.snippet,
+    reason: item.reason,
+    rank: item.rank ?? null,
+    score: item.score ?? null,
+    selected: item.selected ?? false,
+    matchedTerms: item.matched_terms ?? [],
+    matchedPhrases: item.matched_phrases ?? [],
+    visibleText: item.visible_text ?? "",
+  };
+}
 
 function normalizeProductContentJob(record: ApiProductContentJobRecord): ProductContentJobDetail {
   return {
@@ -31,12 +58,36 @@ function normalizeProductContentJob(record: ApiProductContentJobRecord): Product
           primaryValuePoints: record.product_brief.primary_value_points,
         }
       : null,
-    referenceContext: record.reference_context.map((item) => ({
-      sourceId: item.source_id,
-      title: item.title,
-      snippet: item.snippet,
-      reason: item.reason,
-    })),
+    sellingStrategy: record.selling_strategy
+      ? {
+          primaryAngle: record.selling_strategy.primary_angle,
+          supportingAngles: record.selling_strategy.supporting_angles,
+          scenarioFocus: record.selling_strategy.scenario_focus,
+          expressionGuardrails: record.selling_strategy.expression_guardrails,
+        }
+      : null,
+    inputAlerts: record.input_alerts ?? [],
+    referenceContext: record.reference_context.map(normalizeReferenceItem),
+    retrievalCandidates: (record.retrieval_candidates ?? []).map(normalizeReferenceItem),
+    contextSummary: record.context_summary ?? {},
+    diagnostics: record.diagnostics
+      ? {
+          generationProvider: record.diagnostics.generation_provider ?? "",
+          retrievalProvider: record.diagnostics.retrieval_provider ?? "",
+          retrievalQuery: record.diagnostics.retrieval_query ?? "",
+          retrievalTopKRequested: record.diagnostics.retrieval_top_k_requested ?? 0,
+          retrievalTopKEffective: record.diagnostics.retrieval_top_k_effective ?? 0,
+          candidateHitCount: record.diagnostics.candidate_hit_count ?? 0,
+          selectedHitCount: record.diagnostics.selected_hit_count ?? 0,
+          selectedSourceIds: record.diagnostics.selected_source_ids ?? [],
+          selectedTitles: record.diagnostics.selected_titles ?? [],
+          weakRetrieval: record.diagnostics.weak_retrieval ?? false,
+          duplicateHitsRemoved: record.diagnostics.duplicate_hits_removed ?? 0,
+          failureStage: record.diagnostics.failure_stage ?? null,
+          failureReason: record.diagnostics.failure_reason ?? null,
+        }
+      : null,
+    processingTrace: record.processing_trace ?? [],
     generatedContent: record.generated_content
       ? {
           sellingPointsCopy: record.generated_content.selling_points_copy,
@@ -78,6 +129,31 @@ export async function createProductContentJob(values: ProductInputFormValues): P
 export async function fetchProductContentJob(jobId: string): Promise<ProductContentJobDetail> {
   const response = await apiClient.get<ApiProductContentJobRecord>(`/product-content/jobs/${jobId}`);
   return normalizeProductContentJob(response);
+}
+
+export async function fetchProductContentJobAuditLogs(jobId: string): Promise<ProductContentAuditLog[]> {
+  const response = await apiClient.get<
+    Array<{
+      id: string;
+      task_id: string;
+      export_job_id?: string | null;
+      event_type: string;
+      outcome: "success" | "failure";
+      summary: string;
+      details?: Record<string, unknown>;
+      created_at: string;
+    }>
+  >(`/product-content/jobs/${jobId}/audit-logs`);
+  return response.map((item) => ({
+    id: item.id,
+    taskId: item.task_id,
+    exportJobId: item.export_job_id ?? null,
+    eventType: item.event_type,
+    outcome: item.outcome,
+    summary: item.summary,
+    details: item.details ?? {},
+    createdAt: item.created_at,
+  }));
 }
 
 export { normalizeProductContentJob };

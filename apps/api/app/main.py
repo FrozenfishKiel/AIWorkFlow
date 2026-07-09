@@ -8,6 +8,7 @@ from app.api.routes_auth import router as auth_router
 from app.api.routes_exports import router as exports_router
 from app.api.routes_knowledge import router as knowledge_router
 from app.api.routes_product_content import router as product_content_router
+from app.api.routes_runtime_config import router as runtime_config_router
 from app.core.db import init_db, session_scope
 from app.core.logging import configure_logging
 from app.core.security import bearer_scheme, require_authenticated_user
@@ -51,6 +52,7 @@ def _require_access_token_dependency(
 
 
 app.include_router(auth_router)
+app.include_router(runtime_config_router)
 app.include_router(exports_router, dependencies=[Depends(_require_access_token_dependency)])
 app.include_router(knowledge_router, dependencies=[Depends(_require_access_token_dependency)])
 app.include_router(product_content_router, dependencies=[Depends(_require_access_token_dependency)])

@@ -9,6 +9,7 @@ import {
   logoutOperator,
   readStoredAuthSession,
 } from "../services/auth";
+import { fetchRuntimeConfig, updateRuntimeConfig } from "../services/runtimeConfig";
 import type { AuthConfig, AuthUser } from "../types/auth";
 import type { ExportJobRecord } from "../types/export";
 import {
@@ -25,6 +26,7 @@ import {
   type PrototypeFormState,
 } from "./prototypeContentAdapter";
 import { getJobLoadFailureViewState, getStoredJobRecoveryAction } from "../pages/productWorkspaceState";
+import type { RuntimeConfig } from "../types/runtimeConfig";
 
 type Surface = "homepage" | "workspace";
 type ResultState = "loading" | "ready";
@@ -264,6 +266,107 @@ function LoginCard({
         >
           {authSubmitting ? "登录中..." : "登录"}
         </button>
+      </form>
+    </section>
+  );
+}
+
+export function RuntimeSetupCard({
+  runtimeConfig,
+  setupSubmitting,
+  setupError,
+  allowCancel = false,
+  onCancel,
+  onSubmit,
+}: {
+  runtimeConfig: RuntimeConfig;
+  setupSubmitting: boolean;
+  setupError: string;
+  allowCancel?: boolean;
+  onCancel?: () => void;
+  onSubmit: (values: {
+    deepseek_api_key: string;
+    deepseek_api_base_url: string;
+    deepseek_model: string;
+  }) => Promise<void> | void;
+}) {
+  const [deepseekApiKey, setDeepseekApiKey] = useState("");
+  const [deepseekApiBaseUrl, setDeepseekApiBaseUrl] = useState(runtimeConfig.deepseek_api_base_url);
+  const [deepseekModel, setDeepseekModel] = useState(runtimeConfig.deepseek_model);
+
+  useEffect(() => {
+    setDeepseekApiBaseUrl(runtimeConfig.deepseek_api_base_url);
+    setDeepseekModel(runtimeConfig.deepseek_model);
+  }, [runtimeConfig.deepseek_api_base_url, runtimeConfig.deepseek_model]);
+
+  return (
+    <section className="workspace-card input-card">
+      <div className="workspace-card__header">
+        <h3>本机模型配置</h3>
+        <p>第一次在这台机器上运行时，先配置 DeepSeek Key。保存后会写入本地 `apps/api/.env.local`，只影响当前这份项目副本。</p>
+      </div>
+
+      <form
+        className="workspace-card__body login-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onSubmit({
+            deepseek_api_key: deepseekApiKey.trim(),
+            deepseek_api_base_url: deepseekApiBaseUrl.trim(),
+            deepseek_model: deepseekModel.trim(),
+          });
+        }}
+      >
+        <label className="field-input">
+          <span>DeepSeek API Key</span>
+          <input
+            type="password"
+            value={deepseekApiKey}
+            onChange={(event) => setDeepseekApiKey(event.target.value)}
+            autoComplete="off"
+            placeholder="请输入你自己的 DeepSeek API Key"
+          />
+        </label>
+
+        <label className="field-input">
+          <span>DeepSeek Base URL</span>
+          <input
+            value={deepseekApiBaseUrl}
+            onChange={(event) => setDeepseekApiBaseUrl(event.target.value)}
+            autoComplete="off"
+          />
+        </label>
+
+        <label className="field-input">
+          <span>DeepSeek 模型</span>
+          <input value={deepseekModel} onChange={(event) => setDeepseekModel(event.target.value)} autoComplete="off" />
+        </label>
+
+        <div className="preview-field-list__item">
+          <span>配置保存在</span>
+          <p>{runtimeConfig.env_file_path}</p>
+        </div>
+
+        {runtimeConfig.missing_required_settings.length ? (
+          <p className="workspace-error">当前还缺少：{runtimeConfig.missing_required_settings.join("、")}</p>
+        ) : null}
+
+        {setupError ? <p className="workspace-error">{setupError}</p> : null}
+
+        <div className="workspace-actions">
+          <button
+            type="submit"
+            className="primary-button primary-button--block"
+            disabled={!deepseekApiKey.trim() || setupSubmitting}
+          >
+            {setupSubmitting ? "保存中..." : "保存并继续"}
+          </button>
+          {allowCancel ? (
+            <button type="button" className="ghost-button ghost-button--tiny" onClick={onCancel}>
+              暂不修改
+            </button>
+          ) : null}
+        </div>
       </form>
     </section>
   );
@@ -691,6 +794,11 @@ export function DiagnosticsDrawer({
 }
 
 function WorkspaceCanvas({
+  runtimeReady,
+  runtimeConfig,
+  runtimeSetupOpen,
+  runtimeSetupSubmitting,
+  runtimeSetupError,
   authReady,
   authLoading,
   needsLogin,
@@ -710,6 +818,9 @@ function WorkspaceCanvas({
   auditLogs,
   exportJobs,
   onFieldChange,
+  onOpenRuntimeSetup,
+  onCloseRuntimeSetup,
+  onRuntimeSetup,
   onLogin,
   onSubmit,
   onOpenEvidence,
@@ -720,6 +831,11 @@ function WorkspaceCanvas({
   onExportStructuredText,
   onDownloadExport,
 }: {
+  runtimeReady: boolean;
+  runtimeConfig: RuntimeConfig | null;
+  runtimeSetupOpen: boolean;
+  runtimeSetupSubmitting: boolean;
+  runtimeSetupError: string;
   authReady: boolean;
   authLoading: boolean;
   needsLogin: boolean;
@@ -739,6 +855,13 @@ function WorkspaceCanvas({
   auditLogs: ProductContentAuditLog[];
   exportJobs: ExportJobRecord[];
   onFieldChange: <K extends keyof PrototypeFormState>(field: K, value: PrototypeFormState[K]) => void;
+  onOpenRuntimeSetup: () => void;
+  onCloseRuntimeSetup: () => void;
+  onRuntimeSetup: (values: {
+    deepseek_api_key: string;
+    deepseek_api_base_url: string;
+    deepseek_model: string;
+  }) => Promise<void> | void;
   onLogin: (values: { username: string; password: string }) => Promise<void> | void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onOpenEvidence: () => void;
@@ -759,19 +882,35 @@ function WorkspaceCanvas({
             <p className="workspace-stage__eyebrow">主流程</p>
             <h3>输入商品任务，直接产出可继续编辑的内容初稿</h3>
           </div>
-          <span className="workspace-stage__status">{workspaceStatus}</span>
+          <div className="workspace-actions">
+            {runtimeConfig ? (
+              <button type="button" className="ghost-button ghost-button--tiny" onClick={onOpenRuntimeSetup}>
+                本机配置
+              </button>
+            ) : null}
+            <span className="workspace-stage__status">{workspaceStatus}</span>
+          </div>
         </div>
 
         {pageError ? <p className="workspace-error">{pageError}</p> : null}
 
         <div className="workspace-stage__main">
-          {!authReady || authLoading ? (
+          {!runtimeReady || !authReady || authLoading ? (
             <section className="workspace-card input-card">
               <div className="workspace-card__header">
                 <h3>连接工作台</h3>
                 <p>正在确认当前登录方式与工作台权限，请稍候。</p>
               </div>
             </section>
+          ) : runtimeConfig && runtimeSetupOpen ? (
+            <RuntimeSetupCard
+              runtimeConfig={runtimeConfig}
+              setupSubmitting={runtimeSetupSubmitting}
+              setupError={runtimeSetupError}
+              allowCancel={!runtimeConfig.setup_required}
+              onCancel={onCloseRuntimeSetup}
+              onSubmit={onRuntimeSetup}
+            />
           ) : needsLogin ? (
             <LoginCard
               authLoading={authLoading}
@@ -895,6 +1034,11 @@ function WorkspaceSurface(props: Parameters<typeof WorkspaceCanvas>[0]) {
 
 export function StructuredSaasPrototype() {
   const [surface, setSurface] = useState<Surface>("homepage");
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
+  const [runtimeLoading, setRuntimeLoading] = useState(true);
+  const [runtimeSetupOpen, setRuntimeSetupOpen] = useState(false);
+  const [runtimeSetupSubmitting, setRuntimeSetupSubmitting] = useState(false);
+  const [runtimeSetupError, setRuntimeSetupError] = useState("");
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -914,11 +1058,15 @@ export function StructuredSaasPrototype() {
   const [auditLogs, setAuditLogs] = useState<ProductContentAuditLog[]>([]);
   const [exportHistory, setExportHistory] = useState<ExportJobRecord[]>([]);
 
+  const runtimeReady = runtimeConfig !== null;
   const authReady = authConfig !== null;
+  const runtimeSetupRequired = runtimeConfig?.setup_required ?? false;
   const requiresPasswordLogin = authConfig?.auth_mode === "password_login";
-  const needsLogin = authReady && requiresPasswordLogin && !authUser;
-  const workspaceStatus = authLoading
+  const needsLogin = runtimeReady && !runtimeSetupRequired && authReady && requiresPasswordLogin && !authUser;
+  const workspaceStatus = runtimeLoading || authLoading
     ? "正在连接服务"
+    : runtimeSetupOpen || runtimeSetupRequired
+      ? "等待配置"
     : needsLogin
       ? "等待登录"
       : activeJobId
@@ -970,10 +1118,13 @@ export function StructuredSaasPrototype() {
   }
 
   async function bootstrapPage() {
+    setRuntimeLoading(true);
     setAuthLoading(true);
 
     try {
-      const config = await fetchAuthConfig();
+      const [nextRuntimeConfig, config] = await Promise.all([fetchRuntimeConfig(), fetchAuthConfig()]);
+      setRuntimeConfig(nextRuntimeConfig);
+      setRuntimeSetupOpen(nextRuntimeConfig.setup_required);
       setAuthConfig(config);
       let hasValidatedSession = false;
 
@@ -992,7 +1143,8 @@ export function StructuredSaasPrototype() {
       }
 
       const storedJobId = readStoredActiveJobId();
-      const canRestoreStoredJob = config.auth_mode !== "password_login" || hasValidatedSession;
+      const canRestoreStoredJob =
+        !nextRuntimeConfig.setup_required && (config.auth_mode !== "password_login" || hasValidatedSession);
       if (storedJobId && canRestoreStoredJob) {
         await loadJob(storedJobId);
       } else if (storedJobId && config.auth_mode === "password_login") {
@@ -1002,6 +1154,7 @@ export function StructuredSaasPrototype() {
       const message = error instanceof Error ? error.message : "连接服务失败。";
       setPageError(message);
     } finally {
+      setRuntimeLoading(false);
       setAuthLoading(false);
     }
   }
@@ -1058,6 +1211,27 @@ export function StructuredSaasPrototype() {
       setAuthError(error instanceof Error ? error.message : "登录失败。");
     } finally {
       setAuthSubmitting(false);
+    }
+  }
+
+  async function handleRuntimeSetup(values: {
+    deepseek_api_key: string;
+    deepseek_api_base_url: string;
+    deepseek_model: string;
+  }) {
+    setRuntimeSetupSubmitting(true);
+    setRuntimeSetupError("");
+    setPageError("");
+
+    try {
+      const nextRuntimeConfig = await updateRuntimeConfig(values);
+      setRuntimeConfig(nextRuntimeConfig);
+      setRuntimeSetupOpen(false);
+      await bootstrapPage();
+    } catch (error) {
+      setRuntimeSetupError(error instanceof Error ? error.message : "保存本机模型配置失败。");
+    } finally {
+      setRuntimeSetupSubmitting(false);
     }
   }
 
@@ -1159,6 +1333,11 @@ export function StructuredSaasPrototype() {
         <Homepage authLoading={authLoading} onEnterWorkspace={() => switchSurface("workspace")} />
       ) : (
         <WorkspaceSurface
+          runtimeReady={runtimeReady}
+          runtimeConfig={runtimeConfig}
+          runtimeSetupOpen={runtimeSetupOpen}
+          runtimeSetupSubmitting={runtimeSetupSubmitting}
+          runtimeSetupError={runtimeSetupError}
           authReady={authReady}
           authLoading={authLoading}
           needsLogin={needsLogin}
@@ -1178,6 +1357,9 @@ export function StructuredSaasPrototype() {
           auditLogs={auditLogs}
           exportJobs={exportHistory}
           onFieldChange={updateField}
+          onOpenRuntimeSetup={() => setRuntimeSetupOpen(true)}
+          onCloseRuntimeSetup={() => setRuntimeSetupOpen(false)}
+          onRuntimeSetup={handleRuntimeSetup}
           onLogin={handleLogin}
           onSubmit={handleSubmit}
           onOpenEvidence={() => setEvidenceOpen(true)}

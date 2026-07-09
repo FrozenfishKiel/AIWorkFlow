@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Mapping
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -20,6 +21,56 @@ def _read_env_file(path: Path) -> dict[str, str]:
         cleaned_value = value.strip().strip('"').strip("'")
         values[key.strip()] = cleaned_value
     return values
+
+
+def read_local_env_file(path: Path) -> dict[str, str]:
+    """Expose the repo-local env parser for runtime setup flows."""
+
+    return _read_env_file(path)
+
+
+def _quote_env_value(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def write_local_env_file(path: Path, updates: Mapping[str, str | None]) -> None:
+    """Persist selected env keys while preserving unrelated lines and comments."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing_lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    normalized_updates = {
+        str(key).strip(): (None if value is None else str(value).strip())
+        for key, value in updates.items()
+        if str(key).strip()
+    }
+
+    rendered_lines: list[str] = []
+    handled_keys: set[str] = set()
+    for line in existing_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            rendered_lines.append(line)
+            continue
+
+        key = line.split("=", 1)[0].strip()
+        if key not in normalized_updates:
+            rendered_lines.append(line)
+            continue
+
+        handled_keys.add(key)
+        value = normalized_updates[key]
+        if not value:
+            continue
+        rendered_lines.append(f"{key}={_quote_env_value(value)}")
+
+    for key, value in normalized_updates.items():
+        if key in handled_keys or not value:
+            continue
+        rendered_lines.append(f"{key}={_quote_env_value(value)}")
+
+    output = "\n".join(rendered_lines).rstrip()
+    path.write_text(f"{output}\n" if output else "", encoding="utf-8")
 
 
 def _get_first_env(*names: str, default: str | None = None) -> str | None:

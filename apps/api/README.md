@@ -18,6 +18,8 @@
 - `GET /auth/config`
 - `POST /auth/login`
 - `GET /auth/me`
+- `GET /runtime-config`
+- `PUT /runtime-config`
 - `POST /product-content/jobs`
 - `GET /product-content/jobs/{task_id}`
 - `POST /exports`
@@ -47,6 +49,7 @@
 - 当前本地默认建议使用 `auto`
 - 当环境里存在 `DEEPSEEK_API_KEY` 时，`auto` 会优先走 DeepSeek 真链
 - 当前正式链路不再保留 deterministic 保底生成分支；如果 DeepSeek 配置缺失或响应异常，任务应直接失败并暴露错误
+- 现在支持通过 `/runtime-config` 在前端工作台里直接写入本机 `apps/api/.env.local`
 - 默认会自动补入最小电商资料包，保证主链可直接演示
 - 导出当前支持：
   - `markdown`

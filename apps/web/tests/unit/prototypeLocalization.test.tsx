@@ -1,7 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { EvidenceDrawer, StructuredSaasPrototype } from "../../src/prototype/StructuredSaasPrototype";
+import {
+  EvidenceDrawer,
+  RuntimeSetupCard,
+  StructuredSaasPrototype,
+} from "../../src/prototype/StructuredSaasPrototype";
 import type { ProductContentJobDetail } from "../../src/types/productContent";
 
 describe("redesign prototype scope", () => {
@@ -83,5 +87,30 @@ describe("redesign prototype scope", () => {
     expect(html).toContain("\u5356\u70b9\u63d0\u70bc");
     expect(html).toContain("\u98ce\u9669\u63d0\u793a");
     expect(html).not.toContain("\u7535\u5546\u5356\u70b9\u6587\u6848");
+  });
+
+  it("renders a local runtime setup card for first-time model configuration", () => {
+    const html = renderToStaticMarkup(
+      <RuntimeSetupCard
+        setupSubmitting={false}
+        setupError=""
+        runtimeConfig={{
+          env_file_path: "/tmp/apps/api/.env.local",
+          setup_required: true,
+          deepseek_configured: false,
+          deepseek_api_base_url: "https://api.deepseek.com",
+          deepseek_model: "deepseek-v4-flash",
+          task_generation_provider: "auto",
+          retrieval_profile_provider: "auto",
+          missing_required_settings: ["DEEPSEEK_API_KEY"],
+        }}
+        onSubmit={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("\u672c\u673a\u6a21\u578b\u914d\u7f6e");
+    expect(html).toContain("DeepSeek API Key");
+    expect(html).toContain("\u914d\u7f6e\u4fdd\u5b58\u5728");
+    expect(html).toContain("\u4fdd\u5b58\u5e76\u7ee7\u7eed");
   });
 });
